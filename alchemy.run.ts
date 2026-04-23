@@ -6,7 +6,7 @@ const app = await alchemy("kangent", {
 })
 
 const boardDO = DurableObjectNamespace("board-do", {
-	className: "BoardDO",
+	className: "BoardAgent",
 })
 
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
@@ -21,6 +21,8 @@ export const worker = await Vite("kangent-web", {
 	cwd: "apps/web",
 	entrypoint: "src/worker.ts",
 	spa: true,
+	compatibilityDate: "2025-09-15",
+	compatibilityFlags: ["nodejs_compat"],
 	bindings: {
 		BOARD: boardDO,
 	},
