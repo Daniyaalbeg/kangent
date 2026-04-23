@@ -1,0 +1,24 @@
+{
+  "name": "kangent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo run build --filter=\"./packages/*\" && alchemy dev",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "deploy": "tsx --env-file-if-exists=.env alchemy.run.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@cloudflare/vite-plugin": "^1.32.3",
+    "alchemy": "^0.91.2",
+    "tsx": "^4.21.0",
+    "turbo": "^2.4.4",
+    "typescript": "^5.7.3"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

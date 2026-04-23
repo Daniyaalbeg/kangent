@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.turbo/
+.vinxi/
+.output/
+*.tsbuildinfo
+.wrangler/
+.alchemy/
+.dev.vars
+.env
+.env.local
