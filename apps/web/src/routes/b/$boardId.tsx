@@ -1,6 +1,5 @@
 import { createRoute } from "@tanstack/react-router"
 import { Board } from "~/components/Board"
-import { useWebSocket } from "~/hooks/useWebSocket"
 import { Route as rootRoute } from "../__root"
 
 export const Route = createRoute({
@@ -11,7 +10,6 @@ export const Route = createRoute({
 
 function BoardPage() {
 	const { boardId } = Route.useParams()
-	const { sendOp } = useWebSocket(boardId)
 
-	return <Board sendOp={sendOp} />
+	return <Board boardId={boardId} />
 }

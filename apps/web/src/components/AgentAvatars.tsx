@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useBoardStore } from "~/lib/store"
+import type { PresenceActor } from "@kangent/board-worker"
 
 const ACTIVE_WINDOW_MS = 3 * 60 * 1000
 
@@ -23,8 +23,11 @@ function colorFor(id: string) {
 	return AGENT_COLORS[hash % AGENT_COLORS.length]
 }
 
-export function AgentAvatars() {
-	const presence = useBoardStore((s) => s.presence)
+interface AgentAvatarsProps {
+	presence: PresenceActor[]
+}
+
+export function AgentAvatars({ presence }: AgentAvatarsProps) {
 	// Re-render every 30s so avatars drop off after the 3-minute window passes.
 	const [, setTick] = useState(0)
 	useEffect(() => {

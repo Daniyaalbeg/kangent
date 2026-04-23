@@ -57,7 +57,7 @@ function Home() {
           by: "human:anonymous",
         }),
       });
-      const data = await res.json();
+	      const data = (await res.json()) as { id: string };
       navigate({ to: "/b/$boardId", params: { boardId: data.id } });
     } catch (error) {
       console.error("Failed to create board:", error);

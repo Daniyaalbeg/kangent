@@ -1,9 +1,10 @@
-import { BoardDO } from "@kangent/board-worker"
+import { getAgentByName, routeAgentRequest } from "agents"
+import { BoardAgent } from "@kangent/board-worker"
 
-export { BoardDO }
+export { BoardAgent }
 
 export interface Env {
-	BOARD: DurableObjectNamespace
+	BOARD: DurableObjectNamespace<BoardAgent>
 	ASSETS: Fetcher
 }
 
@@ -18,6 +19,11 @@ export default {
 		// API routes → Durable Object
 		if (url.pathname.startsWith("/api/boards")) {
 			return handleApiRequest(request, env, url)
+		}
+
+		const agentResponse = await routeAgentRequest(request, env)
+		if (agentResponse) {
+			return agentResponse
 		}
 
 		// Canonical skill file. Vanity path so a user's repo-level SKILL.md
@@ -177,10 +183,9 @@ async function handleApiRequest(
 	}
 
 	const boardId = match[1]
-	const doId = env.BOARD.idFromName(boardId)
-	const stub = env.BOARD.get(doId)
+	const stub = await getAgentByName(env.BOARD, boardId)
 
-	// Forward the full request to the DO
+	// Forward the full request to the board agent instance.
 	return stub.fetch(request)
 }
 
@@ -202,26 +207,16 @@ async function handleCreateBoard(request: Request, env: Env): Promise<Response> 
 		)
 	}
 
-	// Generate a unique board ID and create a DO for it
+	// Generate a unique board ID and initialize its board agent instance.
 	const boardId = crypto.randomUUID().replace(/-/g, "").slice(0, 12)
-	const doId = env.BOARD.idFromName(boardId)
-	const stub = env.BOARD.get(doId)
-
-	// Forward creation request to the DO
-	const doRequest = new Request(request.url, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ ...body, boardId }),
+	const stub = await getAgentByName(env.BOARD, boardId)
+	const board = await stub.initializeBoard({
+		title: body.title,
+		description: body.description,
+		columns: body.columns,
+		by: body.by ?? "human:anonymous",
 	})
 
-	const response = await stub.fetch(doRequest)
-
-	if (!response.ok) {
-		return response
-	}
-
-	// The DO created the board, return the response with the board URL
-	const board = await response.json() as any
 	return new Response(
 		JSON.stringify({
 			id: boardId,

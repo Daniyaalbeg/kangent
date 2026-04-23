@@ -1,12 +1,13 @@
 name = "kangent"
 compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
 main = "src/worker.ts"
 
 [durable_objects]
 bindings = [
-  { name = "BOARD", class_name = "BoardDO" }
+  { name = "BOARD", class_name = "BoardAgent" }
 ]
 
 [[migrations]]
-tag = "v1"
-new_classes = ["BoardDO"]
+tag = "v2"
+new_sqlite_classes = ["BoardAgent"]

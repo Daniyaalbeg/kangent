@@ -1,20 +1,21 @@
-import { useState, useCallback, useEffect, useMemo } from "react"
+import { useAgent } from "agents/react"
+import { useEffect, useMemo, useState } from "react"
 import {
 	DndContext,
-	type DragStartEvent,
 	type DragEndEvent,
+	type DragStartEvent,
 	PointerSensor,
+	closestCorners,
 	useSensor,
 	useSensors,
-	closestCorners,
 } from "@dnd-kit/core"
 import type { Card as CardType } from "@kangent/board-core"
-import { useBoardStore } from "~/lib/store"
-import { Column } from "./Column"
-import { CardDetail } from "./CardDetail"
-import { DragOverlay } from "./DragOverlay"
-import { AgentAvatars } from "./AgentAvatars"
+import type { BoardAgent, BoardAgentState } from "@kangent/board-worker"
 import { nanoid } from "nanoid"
+import { AgentAvatars } from "./AgentAvatars"
+import { CardDetail } from "./CardDetail"
+import { Column } from "./Column"
+import { DragOverlay } from "./DragOverlay"
 import {
 	ActionsRow,
 	Brand,
@@ -35,61 +36,48 @@ import {
 } from "./ui"
 
 interface BoardProps {
-	sendOp: (op: Record<string, unknown>) => void
+	boardId: string
 }
 
-export function Board({ sendOp }: BoardProps) {
-	const board = useBoardStore((s) => s.board)
-	const cards = useBoardStore((s) => s.cards)
-	const addCard = useBoardStore((s) => s.addCard)
-	const updateCard = useBoardStore((s) => s.updateCard)
-	const moveCard = useBoardStore((s) => s.moveCard)
-	const deleteCard = useBoardStore((s) => s.deleteCard)
-	const addColumn = useBoardStore((s) => s.addColumn)
-	const updateColumn = useBoardStore((s) => s.updateColumn)
-	const deleteColumn = useBoardStore((s) => s.deleteColumn)
-
+export function Board({ boardId }: BoardProps) {
+	const [actorId] = useState(() => `human:${nanoid(6)}`)
+	const [connected, setConnected] = useState(false)
 	const [activeCard, setActiveCard] = useState<CardType | null>(null)
 	const [selectedCard, setSelectedCard] = useState<CardType | null>(null)
 	const [isAddingColumn, setIsAddingColumn] = useState(false)
 	const [newColumnTitle, setNewColumnTitle] = useState("")
 	const [shareCopied, setShareCopied] = useState(false)
 
-	const handleShare = useCallback(async () => {
-		if (typeof window === "undefined") return
-		const url = window.location.href
-		try {
-			if (navigator.clipboard?.writeText) {
-				await navigator.clipboard.writeText(url)
-			} else {
-				const ta = document.createElement("textarea")
-				ta.value = url
-				ta.style.position = "fixed"
-				ta.style.opacity = "0"
-				document.body.appendChild(ta)
-				ta.select()
-				document.execCommand("copy")
-				document.body.removeChild(ta)
-			}
-			setShareCopied(true)
-		} catch {
-			setShareCopied(false)
-		}
-	}, [])
+	const agent = useAgent<BoardAgent, BoardAgentState>({
+		agent: "BoardAgent",
+		basePath: `api/boards/${boardId}/live`,
+		query: { actorId },
+		onOpen: () => setConnected(true),
+		onClose: () => setConnected(false),
+		onError: () => setConnected(false),
+	})
+
+	const board = agent.state?.board ?? null
+	const cardsList = agent.state?.cards ?? []
+	const presence = agent.state?.presence ?? []
+	const cards = useMemo(
+		() => new Map(cardsList.map((card) => [card.id, card])),
+		[cardsList],
+	)
 
 	useEffect(() => {
 		if (!shareCopied) return
-		const t = setTimeout(() => setShareCopied(false), 3000)
-		return () => clearTimeout(t)
+		const timeout = setTimeout(() => setShareCopied(false), 3000)
+		return () => clearTimeout(timeout)
 	}, [shareCopied])
 
 	const columnsWithCards = useMemo(() => {
 		if (!board) return []
-		return board.columns.map((col) => ({
-			...col,
-			cards: col.cardIds
+		return board.columns.map((column) => ({
+			...column,
+			cards: column.cardIds
 				.map((id) => cards.get(id))
-				.filter((c): c is CardType => c !== undefined),
+				.filter((card): card is CardType => card !== undefined),
 		}))
 	}, [board, cards])
 
@@ -97,170 +85,132 @@ export function Board({ sendOp }: BoardProps) {
 		useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
 	)
 
-	const handleDragStart = useCallback((event: DragStartEvent) => {
+	const handleShare = async () => {
+		if (typeof window === "undefined") return
+		const url = window.location.href
+		try {
+			if (navigator.clipboard?.writeText) {
+				await navigator.clipboard.writeText(url)
+			} else {
+				const textarea = document.createElement("textarea")
+				textarea.value = url
+				textarea.style.position = "fixed"
+				textarea.style.opacity = "0"
+				document.body.appendChild(textarea)
+				textarea.select()
+				document.execCommand("copy")
+				document.body.removeChild(textarea)
+			}
+			setShareCopied(true)
+		} catch {
+			setShareCopied(false)
+		}
+	}
+
+	const handleDragStart = (event: DragStartEvent) => {
 		const { active } = event
 		if (active.data.current?.type === "card") {
 			setActiveCard(active.data.current.card)
 		}
-	}, [])
+	}
 
-	const handleDragEnd = useCallback(
-		(event: DragEndEvent) => {
-			setActiveCard(null)
-			const { active, over } = event
-			if (!over || !active.data.current) return
+	const handleDragEnd = (event: DragEndEvent) => {
+		setActiveCard(null)
+		const { active, over } = event
+		if (!board || !over || !active.data.current) return
 
-			const activeData = active.data.current
-			if (activeData.type !== "card") return
+		const activeData = active.data.current
+		if (activeData.type !== "card") return
 
-			const card = activeData.card as CardType
-			let targetColumnId: string
-			let position: number
+		const card = activeData.card as CardType
+		let targetColumnId: string
+		let position: number
 
-			if (over.data.current?.type === "column") {
-				targetColumnId = over.data.current.column.id
-				position = over.data.current.column.cardIds?.length ?? 0
-			} else if (over.data.current?.type === "card") {
-				const overCard = over.data.current.card as CardType
-				targetColumnId = overCard.columnId
-				const col = columnsWithCards.find((c) => c.id === targetColumnId)
-				const idx = col?.cards.findIndex((c) => c.id === overCard.id) ?? 0
-				position = idx
-			} else {
-				// Dropped on a column droppable
-				const colId = String(over.id).replace("column:", "")
-				targetColumnId = colId
-				const col = columnsWithCards.find((c) => c.id === colId)
-				position = col?.cards.length ?? 0
-			}
+		if (over.data.current?.type === "column") {
+			targetColumnId = over.data.current.column.id
+			position = over.data.current.column.cardIds?.length ?? 0
+		} else if (over.data.current?.type === "card") {
+			const overCard = over.data.current.card as CardType
+			targetColumnId = overCard.columnId
+			const column = columnsWithCards.find((entry) => entry.id === targetColumnId)
+			const index = column?.cards.findIndex((entry) => entry.id === overCard.id) ?? 0
+			position = index
+		} else {
+			targetColumnId = String(over.id).replace("column:", "")
+			const column = columnsWithCards.find((entry) => entry.id === targetColumnId)
+			position = column?.cards.length ?? 0
+		}
 
-			if (card.columnId === targetColumnId) {
-				const col = columnsWithCards.find((c) => c.id === targetColumnId)
-				const currentIdx = col?.cards.findIndex((c) => c.id === card.id) ?? 0
-				if (currentIdx === position) return
-			}
+		if (card.columnId === targetColumnId) {
+			const column = columnsWithCards.find((entry) => entry.id === targetColumnId)
+			const currentIndex = column?.cards.findIndex((entry) => entry.id === card.id) ?? 0
+			if (currentIndex === position) return
+		}
 
-			moveCard(card.id, targetColumnId, position)
-			sendOp({
-				type: "card:move",
-				opId: nanoid(8),
-				cardId: card.id,
-				toColumnId: targetColumnId,
-				position,
-			})
-		},
-		[columnsWithCards, moveCard, sendOp],
-	)
+		void agent.call("moveCard", [
+			card.id,
+			{ toColumnId: targetColumnId, position, by: actorId },
+		])
+	}
 
-	const handleAddCard = useCallback(
-		(columnId: string, title: string) => {
-			addCard(columnId, title)
-			sendOp({
-				type: "card:add",
-				opId: nanoid(8),
+	const handleAddCard = (columnId: string, title: string) => {
+		void agent.call("addCard", [
+			{
 				columnId,
 				title,
-			})
-		},
-		[addCard, sendOp],
-	)
+				by: actorId,
+			},
+		])
+	}
 
-	const handleUpdateCard = useCallback(
-		(cardId: string, updates: { title?: string; description?: unknown }) => {
-			updateCard(cardId, updates)
-			sendOp({
-				type: "card:update",
-				opId: nanoid(8),
-				cardId,
-				...updates,
-			})
-			setSelectedCard(null)
-		},
-		[updateCard, sendOp],
-	)
+	const handleUpdateCard = (cardId: string, updates: { title?: string; description?: unknown }) => {
+		void agent.call("updateCard", [cardId, { ...updates, by: actorId }])
+		setSelectedCard(null)
+	}
 
-	const handleDeleteCard = useCallback(
-		(cardId: string) => {
-			deleteCard(cardId)
-			sendOp({
-				type: "card:delete",
-				opId: nanoid(8),
-				cardId,
-			})
-			setSelectedCard(null)
-		},
-		[deleteCard, sendOp],
-	)
+	const handleDeleteCard = (cardId: string) => {
+		void agent.call("deleteCard", [cardId, actorId])
+		setSelectedCard(null)
+	}
 
-	const handleMoveCardFromModal = useCallback(
-		(cardId: string, toColumnId: string) => {
-			const targetCol = board?.columns.find((c) => c.id === toColumnId)
-			const position = targetCol?.cardIds.length ?? 0
-			moveCard(cardId, toColumnId, position)
-			sendOp({
-				type: "card:move",
-				opId: nanoid(8),
-				cardId,
-				toColumnId,
-				position,
-			})
-			setSelectedCard((prev) =>
-				prev && prev.id === cardId
-					? ({ ...prev, columnId: toColumnId, position } as CardType)
-					: prev,
-			)
-		},
-		[board, moveCard, sendOp],
-	)
+	const handleMoveCardFromModal = (cardId: string, toColumnId: string) => {
+		if (!board) return
+		const targetColumn = board.columns.find((entry) => entry.id === toColumnId)
+		const position = targetColumn?.cardIds.length ?? 0
+		void agent.call("moveCard", [
+			cardId,
+			{ toColumnId, position, by: actorId },
+		])
+	}
 
-	const handleAddColumn = useCallback(() => {
-		if (!newColumnTitle.trim()) return
-		addColumn(newColumnTitle.trim())
-		sendOp({
-			type: "column:add",
-			opId: nanoid(8),
-			title: newColumnTitle.trim(),
-		})
+	const handleAddColumn = () => {
+		const title = newColumnTitle.trim()
+		if (!title) return
+		void agent.call("addColumn", [title, actorId])
 		setNewColumnTitle("")
 		setIsAddingColumn(false)
-	}, [newColumnTitle, addColumn, sendOp])
+	}
 
-	const handleUpdateColumnTitle = useCallback(
-		(columnId: string, title: string) => {
-			updateColumn(columnId, title)
-			sendOp({
-				type: "column:update",
-				opId: nanoid(8),
-				columnId,
-				title,
-			})
-		},
-		[updateColumn, sendOp],
-	)
+	const handleUpdateColumnTitle = (columnId: string, title: string) => {
+		void agent.call("updateColumn", [columnId, title, actorId])
+	}
 
-	const handleDeleteColumn = useCallback(
-		(columnId: string) => {
-			const col = board?.columns.find((c) => c.id === columnId)
-			const label = col?.title ?? "this column"
-			const confirmed = window.confirm(
-				`Delete "${label}"? This will also remove the cards it contains.`,
-			)
-			if (!confirmed) return
-			deleteColumn(columnId)
-			sendOp({
-				type: "column:delete",
-				opId: nanoid(8),
-				columnId,
-			})
-		},
-		[board, deleteColumn, sendOp],
-	)
+	const handleDeleteColumn = (columnId: string) => {
+		const column = board?.columns.find((entry) => entry.id === columnId)
+		const label = column?.title ?? "this column"
+		const confirmed = window.confirm(`Delete "${label}"?`)
+		if (!confirmed) return
+		void agent.call("deleteColumn", [columnId, undefined, actorId])
+	}
 
 	if (!board) {
 		return (
 			<PageShell variant="centered">
 				<ContentColumn>
-					<NoticeBar text="Loading board state..." meta="sync" />
+					<NoticeBar
+						text={agent.identified ? "Loading board state..." : "Connecting to board..."}
+						meta={connected ? "live" : "reconnecting"}
+					/>
 				</ContentColumn>
 			</PageShell>
 		)
@@ -275,9 +225,9 @@ export function Board({ sendOp }: BoardProps) {
 						<UtilityLinkSpan>public board</UtilityLinkSpan>
 					</UtilityNav>
 					<UtilityNav>
-						<ChipButton onClick={handleShare}>
-						{shareCopied ? "copied" : "share"}
-					</ChipButton>
+						<ChipButton onClick={() => void handleShare()}>
+							{shareCopied ? "copied" : "share"}
+						</ChipButton>
 						<ChipButton as="a" variant="primary" href="/">
 							new board
 						</ChipButton>
@@ -285,8 +235,12 @@ export function Board({ sendOp }: BoardProps) {
 				</UtilityHeader>
 
 				<NoticeBar
-					text="Live board: human edits and agent actions stay visible to everyone in real time."
-					meta={<AgentAvatars />}
+					text={
+						connected
+							? "Live board: state is synced through the board agent in real time."
+							: "Reconnecting to the board agent..."
+					}
+					meta={<AgentAvatars presence={presence} />}
 				/>
 
 				<section className="flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-stretch">
@@ -328,10 +282,10 @@ export function Board({ sendOp }: BoardProps) {
 								<SurfacePanel>
 									<Input
 										autoFocus
-										onChange={(e) => setNewColumnTitle(e.target.value)}
-										onKeyDown={(e) => {
-											if (e.key === "Enter") handleAddColumn()
-											if (e.key === "Escape") setIsAddingColumn(false)
+										onChange={(event) => setNewColumnTitle(event.target.value)}
+										onKeyDown={(event) => {
+											if (event.key === "Enter") handleAddColumn()
+											if (event.key === "Escape") setIsAddingColumn(false)
 										}}
 										placeholder="Column title..."
 										type="text"
@@ -371,12 +325,13 @@ export function Board({ sendOp }: BoardProps) {
 			{selectedCard && (
 				<CardDetail
 					card={cards.get(selectedCard.id) ?? selectedCard}
-					columns={board.columns.map((c) => ({ id: c.id, title: c.title }))}
+					columns={board.columns.map((column) => ({
+						id: column.id,
+						title: column.title,
+					}))}
 					onClose={() => setSelectedCard(null)}
 					onSave={(updates) => handleUpdateCard(selectedCard.id, updates)}
-					onMove={(toColumnId) =>
-						handleMoveCardFromModal(selectedCard.id, toColumnId)
-					}
+					onMove={(toColumnId) => handleMoveCardFromModal(selectedCard.id, toColumnId)}
 					onDelete={() => handleDeleteCard(selectedCard.id)}
 				/>
 			)}

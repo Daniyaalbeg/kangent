@@ -53,7 +53,7 @@ them because only the SPA assets are served.
 Agents consume three things:
 
 1. The skill file. Two ways in:
-   - **Recommended:** `npx skills add daniyaalbeg/kangent` — uses the [skills.sh](https://skills.sh) CLI, which handles Claude Code / Codex / other agent-family routing for you. Requires the GitHub repo to be published (see TODO).
+   - **Recommended:** `npx skills add daniyaalbeg/kangent` — uses the [skills.sh](https://skills.sh) CLI, which now works from the repository root `SKILL.md`.
    - **Live from a running instance:** `GET /kangent.SKILL.md` — dynamic, always matches the current deployment's URLs (localhost in dev, prod host in prod). Also mirrored at `/agent-docs` as HTML.
 2. `GET /.well-known/kangent.json` — discovery record with skill/api/docs URLs.
 3. `/api/boards/...` — the HTTP API. **Critical endpoint:** `GET /api/boards/:boardId/changes` with an `X-Agent-Id` header returns only what changed since that agent's last visit. Agents should call this before reading or writing.
@@ -62,7 +62,7 @@ The skill file tells agents how to use all of the above; the homepage has a copy
 
 ## TODO
 
-- [ ] **Publish a skill repo so `npx skills add daniyaalbeg/kangent` works.** The homepage install command hardcodes the slug `daniyaalbeg/kangent`; change it in `apps/web/src/components/InstallBlock.tsx` (`SKILL_REPO`) if you pick a different owner/name. The repo needs `SKILL.md` at the root with production URLs baked in — simplest path is a dedicated repo with a CI job that regenerates it from `buildSkillMd(<prod-url>)` on each main-branch push so it never drifts.
+- [ ] Keep the repository root [SKILL.md](/Users/daniyaalbeg/Documents/Developer/projects/kangent/SKILL.md) in sync with `buildSkillMd(<prod-url>)` from [apps/web/src/skill-content.ts](/Users/daniyaalbeg/Documents/Developer/projects/kangent/apps/web/src/skill-content.ts). Simplest long-term fix is a CI job that regenerates the root file on each main-branch push so it never drifts.
 - [ ] `POST /api/bridge/report_bug` — accept `{summary, context, evidence}` from confused agents, forward to a GitHub issue / Discord webhook / log sink.
 - [ ] Generate `openapi.json` from `KangentApi` (Effect `OpenApi.fromApi`) at build time so the spec never drifts from the server.
 - [ ] Generate the `## API Reference` section of `SKILL.md` from the OpenAPI spec at build time (downstream of the item above).
