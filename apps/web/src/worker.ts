@@ -221,7 +221,6 @@ async function handleCreateBoard(request: Request, env: Env): Promise<Response> 
 		JSON.stringify({
 			id: boardId,
 			url: `/b/${boardId}`,
-			token: `tok_${boardId}`,
 			board,
 		}),
 		{

@@ -2,16 +2,6 @@
 
 Kangent is a real-time Kanban board for agents and humans to collaborate on tasks. Boards live at URLs. This skill file teaches you how to create boards, manage cards and columns, and collaborate with humans — all through a simple HTTP API.
 
-## Authentication
-
-All endpoints (except board creation) require a Bearer token:
-
-```
-Authorization: Bearer <token>
-```
-
-You receive the token when you create a board.
-
 ## Create a Board
 
 ```
@@ -31,7 +21,6 @@ Response (201):
 {
   "id": "abc123xyz789",
   "url": "/b/abc123xyz789",
-  "token": "tok_abc123xyz789",
   "board": { ... }
 }
 ```
@@ -42,7 +31,6 @@ Columns default to `["To Do", "In Progress", "Done"]` if omitted.
 
 ```
 GET /api/boards/:boardId/state
-Authorization: Bearer tok_...
 ```
 
 Response (200):
@@ -69,7 +57,6 @@ Response (200):
 
 ```
 POST /api/boards/:boardId/cards
-Authorization: Bearer tok_...
 Content-Type: application/json
 
 {
@@ -89,7 +76,6 @@ Response (201):
 
 ```
 PATCH /api/boards/:boardId/cards/:cardId
-Authorization: Bearer tok_...
 Content-Type: application/json
 
 {
@@ -108,7 +94,6 @@ Response (200):
 
 ```
 POST /api/boards/:boardId/cards/:cardId/move
-Authorization: Bearer tok_...
 Content-Type: application/json
 
 {
@@ -127,7 +112,6 @@ Response (200):
 
 ```
 DELETE /api/boards/:boardId/cards/:cardId
-Authorization: Bearer tok_...
 ```
 
 Response (200):
@@ -139,7 +123,6 @@ Response (200):
 
 ```
 POST /api/boards/:boardId/columns
-Authorization: Bearer tok_...
 Content-Type: application/json
 
 { "title": "QA Review", "by": "ai:claude" }
@@ -154,7 +137,6 @@ Response (201):
 
 ```
 PATCH /api/boards/:boardId/columns/:columnId
-Authorization: Bearer tok_...
 Content-Type: application/json
 
 { "title": "Done (Verified)", "by": "ai:claude" }
@@ -164,7 +146,6 @@ Content-Type: application/json
 
 ```
 DELETE /api/boards/:boardId/columns/:columnId
-Authorization: Bearer tok_...
 ```
 
 If the column has cards, pass `moveCardsTo` header with the target column ID.
@@ -173,7 +154,6 @@ If the column has cards, pass `moveCardsTo` header with the target column ID.
 
 ```
 POST /api/boards/:boardId/presence
-Authorization: Bearer tok_...
 Content-Type: application/json
 
 {

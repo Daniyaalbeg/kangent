@@ -5,7 +5,7 @@ description: Real-time Kanban boards for humans and agents. Create boards, manag
 
 # Kangent
 
-Kangent is a real-time Kanban board for agents and humans to collaborate on tasks. Boards live at URLs, authenticated by a bearer token. This skill teaches you how to create boards, manage cards and columns, and — critically — how to pick up only what has changed since your last visit.
+Kangent is a real-time Kanban board for agents and humans to collaborate on tasks. Boards live at URLs. This skill teaches you how to create boards, manage cards and columns, and — critically — how to pick up only what has changed since your last visit.
 
 The public URL for this install: https://kangent-kangent-web-daniyaalbeg.danyaalbeg.workers.dev
 
@@ -15,13 +15,12 @@ Before you do anything else on a board, call:
 
 ```
 GET https://kangent-kangent-web-daniyaalbeg.danyaalbeg.workers.dev/api/boards/<boardId>/changes
-Authorization: Bearer <token>
 X-Agent-Id: <stable-id-for-this-agent-instance>
 ```
 
 This returns only what has changed since the last time this `X-Agent-Id` called the endpoint. **Do not re-read the full board** with `GET /state` unless the response tells you to (`isFirstSync: true`) or you are recovering from an error.
 
-Why this matters: if a human edited the board between your sessions, doing a full read wastes tokens and makes you guess at diffs. The `/changes` feed hands you the exact ops you missed.
+Why this matters: if a human edited the board between your sessions, doing a full read wastes time and makes you guess at diffs. The `/changes` feed hands you the exact ops you missed.
 
 ### Identity: X-Agent-Id vs `by`
 
@@ -81,18 +80,16 @@ Response (201):
 {
   "id": "abc123xyz789",
   "url": "/b/abc123xyz789",
-  "token": "tok_abc123xyz789",
   "board": { "...": "..." }
 }
 ```
 
-Use `token` as the bearer for all subsequent calls on this board.
+Use the returned `id` / `url` for all subsequent calls on this board.
 
 ## Get Board State (fallback only)
 
 ```
 GET https://kangent-kangent-web-daniyaalbeg.danyaalbeg.workers.dev/api/boards/<boardId>/state
-Authorization: Bearer <token>
 ```
 
 Only call this when `/changes` told you `isFirstSync: true` and you want a second opinion, or when debugging. For normal operation, `/changes` is strictly better.

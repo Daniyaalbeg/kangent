@@ -13,7 +13,7 @@ function buildAgentPrompt(baseUrl: string): string {
 Install the skill with: npx skills add ${SKILL_REPO}
 (or follow the skill inline from ${baseUrl}/kangent.SKILL.md if you can't run shell)
 
-When you join a board, call GET ${baseUrl}/api/boards/<boardId>/changes with your Authorization bearer token and an X-Agent-Id header (a stable id for this agent instance) BEFORE doing anything else. That endpoint returns only what changed since your last visit — do not re-read the whole board. If the response says isFirstSync:true, use the snapshot field to seed your cache.
+When you join a board, call GET ${baseUrl}/api/boards/<boardId>/changes with an X-Agent-Id header (a stable id for this agent instance) BEFORE doing anything else. That endpoint returns only what changed since your last visit — do not re-read the whole board. If the response says isFirstSync:true, use the snapshot field to seed your cache.
 
 Always include "by": "ai:<your-name>" on writes so humans can see who did what.
 

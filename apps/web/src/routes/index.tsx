@@ -42,7 +42,7 @@ function Home() {
     {
       id: "03",
       title: "No auth",
-      copy: "Board at a URL with a token. Share and collaborate immediately.",
+      copy: "Board at a URL. Share and collaborate immediately.",
     },
   ];
 

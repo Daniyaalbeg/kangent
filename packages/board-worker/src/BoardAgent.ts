@@ -60,10 +60,6 @@ export class BoardAgent extends Agent<Cloudflare.Env, BoardAgentState> {
 		return this.name
 	}
 
-	private get token() {
-		return `tok_${this.boardId}`
-	}
-
 	async initializeBoard(params: CreateBoardParams) {
 		if (this.state.board) {
 			return this.state.board
@@ -125,9 +121,6 @@ export class BoardAgent extends Agent<Cloudflare.Env, BoardAgentState> {
 			if (tail === "/live") {
 				return this.json({ ok: true })
 			}
-
-			const authError = this.requireAuthorization(request)
-			if (authError) return authError
 
 			if (tail === "/state" && request.method === "GET") {
 				const snapshot = this.requireSnapshot()
@@ -309,15 +302,6 @@ export class BoardAgent extends Agent<Cloudflare.Env, BoardAgentState> {
 			cursor: params.cursor,
 		})
 		return { ok: true }
-	}
-
-	private requireAuthorization(request: Request) {
-		const authorization = request.headers.get("Authorization")
-		if (authorization === `Bearer ${this.token}`) {
-			return null
-		}
-
-		return this.json({ error: "Unauthorized" }, 401)
 	}
 
 	private getBoardPath(pathname: string) {

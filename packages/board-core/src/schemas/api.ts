@@ -52,7 +52,6 @@ export class UpdatePresencePayload extends Schema.Class<UpdatePresencePayload>(
 export class CreateBoardResponse extends Schema.Class<CreateBoardResponse>("CreateBoardResponse")({
 	id: Schema.String,
 	url: Schema.String,
-	token: Schema.String,
 	board: Board,
 }) {}
 

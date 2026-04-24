@@ -1,23 +1,17 @@
 export interface KangentHttpClientOptions {
 	baseUrl: string
-	token?: string
 }
 
 export class KangentHttpClient {
 	private baseUrl: string
-	private token?: string
 
 	constructor(options: KangentHttpClientOptions) {
 		this.baseUrl = options.baseUrl.replace(/\/$/, "")
-		this.token = options.token
 	}
 
 	private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
 		const headers: Record<string, string> = {
 			"Content-Type": "application/json",
-		}
-		if (this.token) {
-			headers["Authorization"] = `Bearer ${this.token}`
 		}
 		const res = await fetch(`${this.baseUrl}${path}`, {
 			method,
@@ -32,7 +26,7 @@ export class KangentHttpClient {
 	}
 
 	async createBoard(params: { title: string; description?: string; columns?: string[]; by: string }) {
-		return this.request<{ id: string; url: string; token: string; board: unknown }>(
+		return this.request<{ id: string; url: string; board: unknown }>(
 			"POST",
 			"/api/boards",
 			params,

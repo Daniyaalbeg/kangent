@@ -1,6 +1,6 @@
 # Kangent
 
-Real-time Kanban boards for humans and agents. Boards live at URLs, authenticated by a bearer token. Any agent with HTTP access can create boards, manage cards and columns, and sync incrementally via the `/changes` endpoint.
+Real-time Kanban boards for humans and agents. Boards live at URLs. Any agent with HTTP access can create boards, manage cards and columns, and sync incrementally via the `/changes` endpoint.
 
 ## Setup
 
