@@ -1,40 +1,42 @@
-import { useSortable } from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
-import type { Card as CardType } from "@kangent/board-core"
-import { AgentBadge } from "./ui"
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import type { Card as CardType } from "@kangent/board-core";
+import { AgentBadge, DueDateBadge, PriorityBadge } from "./ui";
 
 interface CardProps {
-	card: CardType
-	onClick: () => void
+	card: CardType;
+	onClick: () => void;
 }
 
 const BOARD_CARD_CLASS =
 	"flex flex-col gap-2 p-[14px] rounded-xl bg-surface cursor-grab active:cursor-grabbing " +
 	"ring-1 ring-inset ring-border-soft " +
 	"transition-[transform,box-shadow] duration-[180ms] " +
-	"hover:-translate-y-px hover:shadow-[inset_0_0_0_1px_var(--color-border),0_10px_24px_-18px_rgb(39_39_42/0.38)]"
+	"hover:-translate-y-px hover:shadow-[inset_0_0_0_1px_var(--color-border),0_10px_24px_-18px_rgb(39_39_42/0.38)]";
 
-export { BOARD_CARD_CLASS }
+export { BOARD_CARD_CLASS };
 
 export function Card({ card, onClick }: CardProps) {
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: card.id,
 		data: { type: "card", card },
-	})
+	});
 
 	const style = {
 		transform: CSS.Transform.toString(transform),
 		transition,
 		opacity: isDragging ? 0.5 : 1,
-	}
+	};
 
-	const isAgent = card.createdBy?.startsWith("ai:")
+	const isAgent = card.createdBy?.startsWith("ai:");
 	const description =
 		typeof card.description === "string"
 			? card.description
 			: card.description
 				? "Rich text content"
-				: null
+				: null;
+
+	const hasMeta = Boolean(card.priority) || Boolean(card.dueDate);
 
 	return (
 		<div
@@ -56,9 +58,15 @@ export function Card({ card, onClick }: CardProps) {
 					{description}
 				</p>
 			)}
+			{hasMeta && (
+				<div className="flex flex-wrap items-center gap-[6px]">
+					{card.priority && <PriorityBadge priority={card.priority} />}
+					{card.dueDate && <DueDateBadge dueDate={card.dueDate} />}
+				</div>
+			)}
 			<div className="text-[13px] leading-[18px] text-text-muted">
 				<span>{card.createdBy}</span>
 			</div>
 		</div>
-	)
+	);
 }

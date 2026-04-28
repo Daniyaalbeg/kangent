@@ -10,7 +10,8 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "deploy": "tsx --env-file-if-exists=.env alchemy.run.ts"
+    "release": "tsx --env-file-if-exists=.env alchemy.run.ts",
+    "release:destroy": "tsx --env-file-if-exists=.env alchemy.run.ts --destroy"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

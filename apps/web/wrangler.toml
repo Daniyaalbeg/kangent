@@ -5,9 +5,9 @@ main = "src/worker.ts"
 
 [durable_objects]
 bindings = [
-  { name = "BOARD", class_name = "BoardAgent" }
+  { name = "BOARD_SQLITE", class_name = "BoardAgentSqlite" }
 ]
 
 [[migrations]]
-tag = "v2"
-new_sqlite_classes = ["BoardAgent"]
+tag = "v3"
+new_sqlite_classes = ["BoardAgentSqlite"]

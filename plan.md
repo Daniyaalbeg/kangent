@@ -1047,7 +1047,7 @@ The skill file is a self-contained markdown document that teaches any agent how 
 
 The skill file lives at:
 - `https://kangent.dev/SKILL.md` (served by the worker)
-- `packages/agent-sdk/SKILL.md` (in the repo)
+- `SKILL.md` at the repo root (single source of truth)
 - Installable to `~/.claude/skills/kangent/SKILL.md` or `~/.codex/skills/kangent/SKILL.md`
 
 ### Installer Prompt

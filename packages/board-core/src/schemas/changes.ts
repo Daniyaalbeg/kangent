@@ -1,5 +1,5 @@
-import { Schema } from "effect"
-import { ActorId, Board, Card, Column } from "./board.js"
+import { Schema } from "effect";
+import { ActorId, Board, Card, Column } from "./board.js";
 
 // Full board snapshot (board + cards), returned only on first-sync responses
 // so agents can seed their cache without a second /state call.
@@ -11,6 +11,7 @@ export class BoardSnapshot extends Schema.Class<BoardSnapshot>("BoardSnapshot")(
 // Kinds of mutation that produce a change entry. The string literals double
 // as the "what happened" signal for agents consuming the feed.
 export const ChangeOp = Schema.Literal(
+	"board:update",
 	"card:add",
 	"card:update",
 	"card:move",
@@ -18,11 +19,14 @@ export const ChangeOp = Schema.Literal(
 	"column:add",
 	"column:update",
 	"column:delete",
-)
-export type ChangeOp = typeof ChangeOp.Type
+	"column:reorder",
+);
+export type ChangeOp = typeof ChangeOp.Type;
 
-// Post-op snapshot of the affected entity. Null for deletes.
-export const ChangeSnapshot = Schema.NullOr(Schema.Union(Card, Column))
+// Post-op snapshot of the affected entity. Null for deletes and reorders
+// (reorder uses `columnIds` instead). For `board:update` this carries the
+// full new Board so agents can update their cached metadata in one step.
+export const ChangeSnapshot = Schema.NullOr(Schema.Union(Board, Card, Column));
 
 export class Change extends Schema.Class<Change>("Change")({
 	version: Schema.Number,
@@ -32,6 +36,9 @@ export class Change extends Schema.Class<Change>("Change")({
 	// For card:move, the pre-move column so agents can move the card in their local cache
 	// without re-reading the whole board.
 	fromColumnId: Schema.optional(Schema.String),
+	// For column:reorder, the new ordered list of column IDs. Apply by sorting
+	// your local columns to match this order.
+	columnIds: Schema.optional(Schema.Array(Schema.String)),
 	snapshot: ChangeSnapshot,
 	by: ActorId,
 	at: Schema.String,

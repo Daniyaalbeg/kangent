@@ -2,6 +2,7 @@ import { createRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { CreateBoardDialog } from "~/components/CreateBoardDialog";
 import { InstallBlock } from "~/components/InstallBlock";
+import { RecentBoards } from "~/components/RecentBoards";
 import {
   BodyCopy,
   Brand,
@@ -17,6 +18,7 @@ import {
   UtilityLink,
   UtilityNav,
 } from "~/components/ui";
+import { recordBoardAccess } from "~/lib/boardHistory";
 import { Route as rootRoute } from "./__root";
 
 export const Route = createRoute({
@@ -47,8 +49,9 @@ function Home() {
   ];
 
   const handleCreate = async (title: string, columns?: string[]) => {
+    let res: Response;
     try {
-      const res = await fetch("/api/boards", {
+      res = await fetch("/api/boards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -57,11 +60,27 @@ function Home() {
           by: "human:anonymous",
         }),
       });
-	      const data = (await res.json()) as { id: string };
-      navigate({ to: "/b/$boardId", params: { boardId: data.id } });
-    } catch (error) {
-      console.error("Failed to create board:", error);
+    } catch {
+      // Network failure — couldn't reach the worker at all.
+      throw new Error("Couldn't reach the server. Check your connection and try again.");
     }
+
+    if (!res.ok) {
+      // Try to surface the server's structured error if it's there. Effect
+      // errors come back as { _tag: "ValidationError", message: "..." }.
+      const fallback = `Server returned ${res.status}.`;
+      const body = (await res.json().catch(() => null)) as
+        | { _tag?: string; message?: string }
+        | null;
+      const message = body?.message ?? fallback;
+      throw new Error(message);
+    }
+
+    const data = (await res.json()) as { id: string };
+    // Record before navigating so the entry is in IDB by the time we land
+    // on the board page (which will upsert with `'visited'` — origin stays 'created').
+    await recordBoardAccess(data.id, title, "created");
+    navigate({ to: "/b/$boardId", params: { boardId: data.id } });
   };
 
   return (
@@ -76,9 +95,9 @@ function Home() {
 
         <section className="mt-12 flex flex-col">
           <DisplayTitle className="text-balance">
-            The Kanban board
+            Kanban for agents
             <br />
-            for humans and agents.
+            and sometimes humans
           </DisplayTitle>
           <div className="mt-8 flex flex-col gap-3">
             <BodyCopy>
@@ -104,6 +123,8 @@ function Home() {
             <code>SKILL.md</code>.
           </MutedCopy>
         </div>
+
+        <RecentBoards />
 
         <FeatureGrid className="mt-10">
           {features.map((feature) => (

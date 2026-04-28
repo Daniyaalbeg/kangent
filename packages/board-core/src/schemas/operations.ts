@@ -1,10 +1,18 @@
-import { Schema } from "effect"
-import { ActorId } from "./board.js"
+import { Schema } from "effect";
+import { ActorId, CardPriority } from "./board.js";
 
 const BaseOp = Schema.Struct({
 	opId: Schema.String,
 	by: ActorId,
-})
+});
+
+export class BoardUpdateOp extends Schema.Class<BoardUpdateOp>("BoardUpdateOp")({
+	...BaseOp.fields,
+	type: Schema.Literal("board:update"),
+	title: Schema.optional(Schema.String),
+	// `null` clears the description; omit to leave unchanged.
+	description: Schema.optional(Schema.NullOr(Schema.String)),
+}) {}
 
 export class CardAddOp extends Schema.Class<CardAddOp>("CardAddOp")({
 	...BaseOp.fields,
@@ -12,6 +20,8 @@ export class CardAddOp extends Schema.Class<CardAddOp>("CardAddOp")({
 	columnId: Schema.String,
 	title: Schema.String,
 	description: Schema.optional(Schema.Unknown),
+	priority: Schema.optional(CardPriority),
+	dueDate: Schema.optional(Schema.String),
 }) {}
 
 export class CardMoveOp extends Schema.Class<CardMoveOp>("CardMoveOp")({
@@ -28,6 +38,9 @@ export class CardUpdateOp extends Schema.Class<CardUpdateOp>("CardUpdateOp")({
 	cardId: Schema.String,
 	title: Schema.optional(Schema.String),
 	description: Schema.optional(Schema.Unknown),
+	// Pass `null` to explicitly clear the field; omit to leave unchanged.
+	priority: Schema.optional(Schema.NullOr(CardPriority)),
+	dueDate: Schema.optional(Schema.NullOr(Schema.String)),
 }) {}
 
 export class CardDeleteOp extends Schema.Class<CardDeleteOp>("CardDeleteOp")({
@@ -71,6 +84,7 @@ export class PresenceUpdateOp extends Schema.Class<PresenceUpdateOp>("PresenceUp
 }) {}
 
 export const ClientOperation = Schema.Union(
+	BoardUpdateOp,
 	CardAddOp,
 	CardMoveOp,
 	CardUpdateOp,
@@ -80,8 +94,8 @@ export const ClientOperation = Schema.Union(
 	ColumnDeleteOp,
 	ColumnReorderOp,
 	PresenceUpdateOp,
-)
-export type ClientOperation = typeof ClientOperation.Type
+);
+export type ClientOperation = typeof ClientOperation.Type;
 
 export class BoardStateMessage extends Schema.Class<BoardStateMessage>("BoardStateMessage")({
 	type: Schema.Literal("board:state"),
@@ -128,5 +142,5 @@ export const ServerMessage = Schema.Union(
 	OpAckMessage,
 	OpErrorMessage,
 	PresenceStateMessage,
-)
-export type ServerMessage = typeof ServerMessage.Type
+);
+export type ServerMessage = typeof ServerMessage.Type;

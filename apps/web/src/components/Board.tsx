@@ -1,5 +1,3 @@
-import { useAgent } from "agents/react"
-import { useEffect, useMemo, useState } from "react"
 import {
 	DndContext,
 	type DragEndEvent,
@@ -8,14 +6,18 @@ import {
 	closestCorners,
 	useSensor,
 	useSensors,
-} from "@dnd-kit/core"
-import type { Card as CardType } from "@kangent/board-core"
-import type { BoardAgent, BoardAgentState } from "@kangent/board-worker"
-import { nanoid } from "nanoid"
-import { AgentAvatars } from "./AgentAvatars"
-import { CardDetail } from "./CardDetail"
-import { Column } from "./Column"
-import { DragOverlay } from "./DragOverlay"
+} from "@dnd-kit/core";
+import { SortableContext, horizontalListSortingStrategy } from "@dnd-kit/sortable";
+import type { Card as CardType, Column as ColumnType } from "@kangent/board-core";
+import type { BoardAgentSqlite, BoardAgentState } from "@kangent/board-worker";
+import { useAgent } from "agents/react";
+import { nanoid } from "nanoid";
+import { useEffect, useMemo, useState } from "react";
+import { recordBoardAccess } from "~/lib/boardHistory";
+import { AgentAvatars } from "./AgentAvatars";
+import { CardDetail } from "./CardDetail";
+import { Column, columnSortId } from "./Column";
+import { DragOverlay } from "./DragOverlay";
 import {
 	ActionsRow,
 	Brand,
@@ -33,125 +35,181 @@ import {
 	UtilityLinkSpan,
 	UtilityNav,
 	scrollbarThinClass,
-} from "./ui"
+} from "./ui";
 
 interface BoardProps {
-	boardId: string
+	boardId: string;
 }
 
-export function Board({ boardId }: BoardProps) {
-	const [actorId] = useState(() => `human:${nanoid(6)}`)
-	const [connected, setConnected] = useState(false)
-	const [activeCard, setActiveCard] = useState<CardType | null>(null)
-	const [selectedCard, setSelectedCard] = useState<CardType | null>(null)
-	const [isAddingColumn, setIsAddingColumn] = useState(false)
-	const [newColumnTitle, setNewColumnTitle] = useState("")
-	const [shareCopied, setShareCopied] = useState(false)
+type DragActive = { type: "card"; card: CardType } | { type: "column"; column: ColumnType } | null;
 
-	const agent = useAgent<BoardAgent, BoardAgentState>({
-		agent: "BoardAgent",
+export function Board({ boardId }: BoardProps) {
+	const [actorId] = useState(() => `human:${nanoid(6)}`);
+	const [connected, setConnected] = useState(false);
+	const [activeDrag, setActiveDrag] = useState<DragActive>(null);
+	const [selectedCard, setSelectedCard] = useState<CardType | null>(null);
+	const [isAddingColumn, setIsAddingColumn] = useState(false);
+	const [newColumnTitle, setNewColumnTitle] = useState("");
+	const [shareCopied, setShareCopied] = useState(false);
+	const [editingTitle, setEditingTitle] = useState(false);
+	const [draftTitle, setDraftTitle] = useState("");
+
+	const agent = useAgent<BoardAgentSqlite, BoardAgentState>({
+		agent: "BoardAgentSqlite",
 		basePath: `api/boards/${boardId}/live`,
 		query: { actorId },
 		onOpen: () => setConnected(true),
 		onClose: () => setConnected(false),
 		onError: () => setConnected(false),
-	})
+	});
 
-	const board = agent.state?.board ?? null
-	const cardsList = agent.state?.cards ?? []
-	const presence = agent.state?.presence ?? []
-	const cards = useMemo(
-		() => new Map(cardsList.map((card) => [card.id, card])),
-		[cardsList],
-	)
+	const board = agent.state?.board ?? null;
+	const cardsList = agent.state?.cards ?? [];
+	const presence = agent.state?.presence ?? [];
+	const cards = useMemo(() => new Map(cardsList.map((card) => [card.id, card])), [cardsList]);
 
 	useEffect(() => {
-		if (!shareCopied) return
-		const timeout = setTimeout(() => setShareCopied(false), 3000)
-		return () => clearTimeout(timeout)
-	}, [shareCopied])
+		if (!shareCopied) return;
+		const timeout = setTimeout(() => setShareCopied(false), 3000);
+		return () => clearTimeout(timeout);
+	}, [shareCopied]);
+
+	// Record this board in local history once the title is known. If the user
+	// created this board on this device, recordBoardAccess preserves the
+	// 'created' origin — only first-time entries are stored as 'visited'.
+	useEffect(() => {
+		if (!board?.title) return;
+		void recordBoardAccess(boardId, board.title, "visited");
+	}, [boardId, board?.title]);
 
 	const columnsWithCards = useMemo(() => {
-		if (!board) return []
+		if (!board) return [];
 		return board.columns.map((column) => ({
 			...column,
 			cards: column.cardIds
 				.map((id) => cards.get(id))
 				.filter((card): card is CardType => card !== undefined),
-		}))
-	}, [board, cards])
+		}));
+	}, [board, cards]);
 
-	const sensors = useSensors(
-		useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-	)
+	const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
 	const handleShare = async () => {
-		if (typeof window === "undefined") return
-		const url = window.location.href
+		if (typeof window === "undefined") return;
+		const url = window.location.href;
 		try {
 			if (navigator.clipboard?.writeText) {
-				await navigator.clipboard.writeText(url)
+				await navigator.clipboard.writeText(url);
 			} else {
-				const textarea = document.createElement("textarea")
-				textarea.value = url
-				textarea.style.position = "fixed"
-				textarea.style.opacity = "0"
-				document.body.appendChild(textarea)
-				textarea.select()
-				document.execCommand("copy")
-				document.body.removeChild(textarea)
+				const textarea = document.createElement("textarea");
+				textarea.value = url;
+				textarea.style.position = "fixed";
+				textarea.style.opacity = "0";
+				document.body.appendChild(textarea);
+				textarea.select();
+				document.execCommand("copy");
+				document.body.removeChild(textarea);
 			}
-			setShareCopied(true)
+			setShareCopied(true);
 		} catch {
-			setShareCopied(false)
+			setShareCopied(false);
 		}
-	}
+	};
 
 	const handleDragStart = (event: DragStartEvent) => {
-		const { active } = event
-		if (active.data.current?.type === "card") {
-			setActiveCard(active.data.current.card)
+		const { active } = event;
+		const data = active.data.current;
+		if (!data) return;
+		if (data.type === "card") {
+			setActiveDrag({ type: "card", card: data.card as CardType });
+		} else if (data.type === "column") {
+			const columnId = data.columnId as string | undefined;
+			if (!board || !columnId) return;
+			const column = board.columns.find((entry) => entry.id === columnId);
+			if (column) setActiveDrag({ type: "column", column });
 		}
-	}
+	};
 
 	const handleDragEnd = (event: DragEndEvent) => {
-		setActiveCard(null)
-		const { active, over } = event
-		if (!board || !over || !active.data.current) return
+		const dragged = activeDrag;
+		setActiveDrag(null);
+		const { active, over } = event;
+		if (!board || !over || !active.data.current) return;
 
-		const activeData = active.data.current
-		if (activeData.type !== "card") return
+		const activeData = active.data.current;
 
-		const card = activeData.card as CardType
-		let targetColumnId: string
-		let position: number
+		// --- Column reorder ---
+		if (activeData.type === "column" && !activeData.column) {
+			// activeData.column is set on the per-column droppable; the column
+			// sortable only carries `columnId`. That's how we tell apart a
+			// column-as-sortable from a card-drop-zone-on-column collision.
+			const fromId = activeData.columnId as string;
+			const overData = over.data.current;
+			let toId: string | undefined;
+			if (
+				overData?.type === "column" &&
+				typeof overData.columnId === "string" &&
+				!overData.column
+			) {
+				toId = overData.columnId;
+			} else if (typeof over.id === "string" && over.id.startsWith("column-sort:")) {
+				toId = over.id.slice("column-sort:".length);
+			}
+			if (!toId || toId === fromId) return;
+
+			const currentIds = board.columns.map((entry) => entry.id);
+			const fromIndex = currentIds.indexOf(fromId);
+			const toIndex = currentIds.indexOf(toId);
+			if (fromIndex === -1 || toIndex === -1) return;
+
+			const next = [...currentIds];
+			next.splice(fromIndex, 1);
+			next.splice(toIndex, 0, fromId);
+			if (next.every((id, i) => id === currentIds[i])) return;
+
+			void agent.call("reorderColumns", [next, actorId]);
+			return;
+		}
+
+		// --- Card move/reorder ---
+		if (activeData.type !== "card") return;
+		const card = (dragged?.type === "card" ? dragged.card : activeData.card) as CardType;
+		let targetColumnId: string;
+		let position: number;
 
 		if (over.data.current?.type === "column") {
-			targetColumnId = over.data.current.column.id
-			position = over.data.current.column.cardIds?.length ?? 0
+			const overColumn = over.data.current.column as
+				| { id: string; cardIds?: readonly string[] }
+				| undefined;
+			if (overColumn) {
+				targetColumnId = overColumn.id;
+				position = overColumn.cardIds?.length ?? 0;
+			} else {
+				// Dropped onto a column-sortable handle; treat as appending to that column.
+				targetColumnId = over.data.current.columnId as string;
+				const column = columnsWithCards.find((entry) => entry.id === targetColumnId);
+				position = column?.cards.length ?? 0;
+			}
 		} else if (over.data.current?.type === "card") {
-			const overCard = over.data.current.card as CardType
-			targetColumnId = overCard.columnId
-			const column = columnsWithCards.find((entry) => entry.id === targetColumnId)
-			const index = column?.cards.findIndex((entry) => entry.id === overCard.id) ?? 0
-			position = index
+			const overCard = over.data.current.card as CardType;
+			targetColumnId = overCard.columnId;
+			const column = columnsWithCards.find((entry) => entry.id === targetColumnId);
+			const index = column?.cards.findIndex((entry) => entry.id === overCard.id) ?? 0;
+			position = index;
 		} else {
-			targetColumnId = String(over.id).replace("column:", "")
-			const column = columnsWithCards.find((entry) => entry.id === targetColumnId)
-			position = column?.cards.length ?? 0
+			targetColumnId = String(over.id).replace("column:", "");
+			const column = columnsWithCards.find((entry) => entry.id === targetColumnId);
+			position = column?.cards.length ?? 0;
 		}
 
 		if (card.columnId === targetColumnId) {
-			const column = columnsWithCards.find((entry) => entry.id === targetColumnId)
-			const currentIndex = column?.cards.findIndex((entry) => entry.id === card.id) ?? 0
-			if (currentIndex === position) return
+			const column = columnsWithCards.find((entry) => entry.id === targetColumnId);
+			const currentIndex = column?.cards.findIndex((entry) => entry.id === card.id) ?? 0;
+			if (currentIndex === position) return;
 		}
 
-		void agent.call("moveCard", [
-			card.id,
-			{ toColumnId: targetColumnId, position, by: actorId },
-		])
-	}
+		void agent.call("moveCard", [card.id, { toColumnId: targetColumnId, position, by: actorId }]);
+	};
 
 	const handleAddCard = (columnId: string, title: string) => {
 		void agent.call("addCard", [
@@ -160,48 +218,79 @@ export function Board({ boardId }: BoardProps) {
 				title,
 				by: actorId,
 			},
-		])
-	}
+		]);
+	};
 
-	const handleUpdateCard = (cardId: string, updates: { title?: string; description?: unknown }) => {
-		void agent.call("updateCard", [cardId, { ...updates, by: actorId }])
-		setSelectedCard(null)
-	}
+	const handleUpdateCard = (
+		cardId: string,
+		updates: {
+			title?: string;
+			description?: unknown;
+			priority?: "low" | "medium" | "high" | "urgent" | null;
+			dueDate?: string | null;
+		},
+	) => {
+		void agent.call("updateCard", [cardId, { ...updates, by: actorId }]);
+		setSelectedCard(null);
+	};
 
 	const handleDeleteCard = (cardId: string) => {
-		void agent.call("deleteCard", [cardId, actorId])
-		setSelectedCard(null)
-	}
+		void agent.call("deleteCard", [cardId, actorId]);
+		setSelectedCard(null);
+	};
 
 	const handleMoveCardFromModal = (cardId: string, toColumnId: string) => {
-		if (!board) return
-		const targetColumn = board.columns.find((entry) => entry.id === toColumnId)
-		const position = targetColumn?.cardIds.length ?? 0
-		void agent.call("moveCard", [
-			cardId,
-			{ toColumnId, position, by: actorId },
-		])
-	}
+		if (!board) return;
+		const targetColumn = board.columns.find((entry) => entry.id === toColumnId);
+		const position = targetColumn?.cardIds.length ?? 0;
+		void agent.call("moveCard", [cardId, { toColumnId, position, by: actorId }]);
+	};
 
 	const handleAddColumn = () => {
-		const title = newColumnTitle.trim()
-		if (!title) return
-		void agent.call("addColumn", [title, actorId])
-		setNewColumnTitle("")
-		setIsAddingColumn(false)
-	}
+		const title = newColumnTitle.trim();
+		if (!title) return;
+		void agent.call("addColumn", [title, actorId]);
+		setNewColumnTitle("");
+		setIsAddingColumn(false);
+	};
 
 	const handleUpdateColumnTitle = (columnId: string, title: string) => {
-		void agent.call("updateColumn", [columnId, title, actorId])
-	}
+		void agent.call("updateColumn", [columnId, title, actorId]);
+	};
+
+	const handleStartTitleEdit = () => {
+		if (!board) return;
+		setDraftTitle(board.title);
+		setEditingTitle(true);
+	};
+
+	const handleSaveTitleEdit = () => {
+		if (!board) {
+			setEditingTitle(false);
+			return;
+		}
+		const trimmed = draftTitle.trim();
+		// No-op for empty input or unchanged value — server would reject empty
+		// anyway, but bailing here avoids a useless round-trip.
+		if (!trimmed || trimmed === board.title) {
+			setEditingTitle(false);
+			return;
+		}
+		void agent.call("updateBoard", [{ title: trimmed, by: actorId }]);
+		setEditingTitle(false);
+	};
+
+	const handleCancelTitleEdit = () => {
+		setEditingTitle(false);
+	};
 
 	const handleDeleteColumn = (columnId: string) => {
-		const column = board?.columns.find((entry) => entry.id === columnId)
-		const label = column?.title ?? "this column"
-		const confirmed = window.confirm(`Delete "${label}"?`)
-		if (!confirmed) return
-		void agent.call("deleteColumn", [columnId, undefined, actorId])
-	}
+		const column = board?.columns.find((entry) => entry.id === columnId);
+		const label = column?.title ?? "this column";
+		const confirmed = window.confirm(`Delete "${label}"?`);
+		if (!confirmed) return;
+		void agent.call("deleteColumn", [columnId, undefined, actorId]);
+	};
 
 	if (!board) {
 		return (
@@ -213,7 +302,7 @@ export function Board({ boardId }: BoardProps) {
 					/>
 				</ContentColumn>
 			</PageShell>
-		)
+		);
 	}
 
 	return (
@@ -244,8 +333,45 @@ export function Board({ boardId }: BoardProps) {
 				/>
 
 				<section className="flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-stretch">
-					<div className="flex flex-col gap-2">
-						<PageTitle>{board.title}</PageTitle>
+					<div className="flex flex-col gap-2 min-w-0 flex-1">
+						{editingTitle ? (
+							<input
+								autoFocus
+								type="text"
+								value={draftTitle}
+								onChange={(event) => setDraftTitle(event.target.value)}
+								onBlur={handleSaveTitleEdit}
+								onKeyDown={(event) => {
+									if (event.key === "Enter") {
+										event.preventDefault();
+										handleSaveTitleEdit();
+									}
+									if (event.key === "Escape") {
+										event.preventDefault();
+										handleCancelTitleEdit();
+									}
+								}}
+								aria-label="Board title"
+								className="m-0 w-full bg-transparent border-0 outline-none p-0 font-serif font-medium text-[clamp(42px,4.2vw,60px)] leading-[0.96] tracking-[-0.035em] text-text-primary border-b-2 border-accent"
+							/>
+						) : (
+							<PageTitle
+								role="button"
+								tabIndex={0}
+								onClick={handleStartTitleEdit}
+								onKeyDown={(event) => {
+									if (event.key === "Enter" || event.key === " ") {
+										event.preventDefault();
+										handleStartTitleEdit();
+									}
+								}}
+								aria-label={`Edit board title: ${board.title}`}
+								title="Click to rename"
+								className="cursor-text rounded-sm transition-colors duration-[140ms] hover:bg-surface-muted/40 focus:bg-surface-muted/40 focus:outline-none"
+							>
+								{board.title}
+							</PageTitle>
+						)}
 					</div>
 				</section>
 
@@ -258,16 +384,21 @@ export function Board({ boardId }: BoardProps) {
 					<div
 						className={`flex gap-[18px] items-start overflow-x-auto pb-3 max-[900px]:pb-5 ${scrollbarThinClass}`}
 					>
-						{columnsWithCards.map((column) => (
-							<Column
-								key={column.id}
-								column={column}
-								onAddCard={(title) => handleAddCard(column.id, title)}
-								onCardClick={setSelectedCard}
-								onUpdateTitle={(title) => handleUpdateColumnTitle(column.id, title)}
-								onDelete={() => handleDeleteColumn(column.id)}
-							/>
-						))}
+						<SortableContext
+							items={columnsWithCards.map((column) => columnSortId(column.id))}
+							strategy={horizontalListSortingStrategy}
+						>
+							{columnsWithCards.map((column) => (
+								<Column
+									key={column.id}
+									column={column}
+									onAddCard={(title) => handleAddCard(column.id, title)}
+									onCardClick={setSelectedCard}
+									onUpdateTitle={(title) => handleUpdateColumnTitle(column.id, title)}
+									onDelete={() => handleDeleteColumn(column.id)}
+								/>
+							))}
+						</SortableContext>
 
 						{isAddingColumn ? (
 							<div className="shrink-0 basis-[270px] flex flex-col gap-3">
@@ -284,8 +415,8 @@ export function Board({ boardId }: BoardProps) {
 										autoFocus
 										onChange={(event) => setNewColumnTitle(event.target.value)}
 										onKeyDown={(event) => {
-											if (event.key === "Enter") handleAddColumn()
-											if (event.key === "Escape") setIsAddingColumn(false)
+											if (event.key === "Enter") handleAddColumn();
+											if (event.key === "Escape") setIsAddingColumn(false);
 										}}
 										placeholder="Column title..."
 										type="text"
@@ -293,9 +424,7 @@ export function Board({ boardId }: BoardProps) {
 									/>
 									<ActionsRow>
 										<PrimaryButton label="Add column" onClick={handleAddColumn} />
-										<TextAction onClick={() => setIsAddingColumn(false)}>
-											Cancel
-										</TextAction>
+										<TextAction onClick={() => setIsAddingColumn(false)}>Cancel</TextAction>
 									</ActionsRow>
 								</SurfacePanel>
 							</div>
@@ -318,7 +447,7 @@ export function Board({ boardId }: BoardProps) {
 						)}
 					</div>
 
-					<DragOverlay activeCard={activeCard} />
+					<DragOverlay activeDrag={activeDrag} />
 				</DndContext>
 			</div>
 
@@ -336,5 +465,5 @@ export function Board({ boardId }: BoardProps) {
 				/>
 			)}
 		</PageShell>
-	)
+	);
 }

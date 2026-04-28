@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react"
-import type { PresenceActor } from "@kangent/board-worker"
+import type { PresenceActor } from "@kangent/board-worker";
+import { useEffect, useState } from "react";
 
-const ACTIVE_WINDOW_MS = 3 * 60 * 1000
+const ACTIVE_WINDOW_MS = 3 * 60 * 1000;
 
 // Deterministic color palette cycled by agent id so the same agent keeps the same color.
 const AGENT_COLORS = [
@@ -13,37 +13,35 @@ const AGENT_COLORS = [
 	"#eab308", // amber
 	"#06b6d4", // cyan
 	"#ef4444", // red
-]
+];
 
 function colorFor(id: string) {
-	let hash = 0
+	let hash = 0;
 	for (let i = 0; i < id.length; i++) {
-		hash = (hash * 31 + id.charCodeAt(i)) >>> 0
+		hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
 	}
-	return AGENT_COLORS[hash % AGENT_COLORS.length]
+	return AGENT_COLORS[hash % AGENT_COLORS.length];
 }
 
 interface AgentAvatarsProps {
-	presence: PresenceActor[]
+	presence: PresenceActor[];
 }
 
 export function AgentAvatars({ presence }: AgentAvatarsProps) {
 	// Re-render every 30s so avatars drop off after the 3-minute window passes.
-	const [, setTick] = useState(0)
+	const [, setTick] = useState(0);
 	useEffect(() => {
-		const t = setInterval(() => setTick((n) => n + 1), 30_000)
-		return () => clearInterval(t)
-	}, [])
+		const t = setInterval(() => setTick((n) => n + 1), 30_000);
+		return () => clearInterval(t);
+	}, []);
 
-	const now = Date.now()
+	const now = Date.now();
 	const activeAgents = presence.filter(
 		(a) =>
-			a.id.startsWith("ai:") &&
-			a.lastSeenAt !== undefined &&
-			now - a.lastSeenAt < ACTIVE_WINDOW_MS,
-	)
+			a.id.startsWith("ai:") && a.lastSeenAt !== undefined && now - a.lastSeenAt < ACTIVE_WINDOW_MS,
+	);
 
-	if (activeAgents.length === 0) return null
+	if (activeAgents.length === 0) return null;
 
 	return (
 		<div className="flex items-center">
@@ -58,5 +56,5 @@ export function AgentAvatars({ presence }: AgentAvatarsProps) {
 				</div>
 			))}
 		</div>
-	)
+	);
 }

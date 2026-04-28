@@ -5,10 +5,10 @@ import type {
 	LabelHTMLAttributes,
 	ReactNode,
 	TextareaHTMLAttributes,
-} from "react"
+} from "react";
 
 function cn(...classes: Array<string | false | null | undefined>) {
-	return classes.filter(Boolean).join(" ")
+	return classes.filter(Boolean).join(" ");
 }
 
 /* ---------- Layout ---------- */
@@ -26,29 +26,21 @@ export function PageShell({
 				"min-h-dvh bg-page-bg text-text-primary",
 				variant === "centered" &&
 					"flex flex-col items-center px-6 pt-[18px] pb-16 max-[900px]:px-4",
-				variant === "board" &&
-					"px-6 pt-[18px] pb-8 max-[900px]:px-4",
+				variant === "board" && "px-6 pt-[18px] pb-8 max-[900px]:px-4",
 				className,
 			)}
 		>
 			{children}
 		</div>
-	)
+	);
 }
 
-export function ContentColumn({
-	className,
-	children,
-	...props
-}: HTMLAttributes<HTMLDivElement>) {
+export function ContentColumn({ className, children, ...props }: HTMLAttributes<HTMLDivElement>) {
 	return (
-		<div
-			{...props}
-			className={cn("w-full max-w-[576px]", className)}
-		>
+		<div {...props} className={cn("w-full max-w-[576px]", className)}>
 			{children}
 		</div>
-	)
+	);
 }
 
 export function SurfacePanel({
@@ -57,7 +49,7 @@ export function SurfacePanel({
 	children,
 	...props
 }: HTMLAttributes<HTMLDivElement> & { as?: "div" | "form" }) {
-	const Comp: any = as ?? "div"
+	const Comp: any = as ?? "div";
 	return (
 		<Comp
 			{...props}
@@ -68,26 +60,18 @@ export function SurfacePanel({
 		>
 			{children}
 		</Comp>
-	)
+	);
 }
 
-export function FieldGroup({
-	className,
-	children,
-	...props
-}: HTMLAttributes<HTMLDivElement>) {
+export function FieldGroup({ className, children, ...props }: HTMLAttributes<HTMLDivElement>) {
 	return (
 		<div {...props} className={cn("flex flex-col gap-2", className)}>
 			{children}
 		</div>
-	)
+	);
 }
 
-export function ActionsRow({
-	className,
-	children,
-	...props
-}: HTMLAttributes<HTMLDivElement>) {
+export function ActionsRow({ className, children, ...props }: HTMLAttributes<HTMLDivElement>) {
 	return (
 		<div
 			{...props}
@@ -98,7 +82,7 @@ export function ActionsRow({
 		>
 			{children}
 		</div>
-	)
+	);
 }
 
 /* ---------- Typography ---------- */
@@ -118,14 +102,10 @@ export function DisplayTitle({
 		>
 			{children}
 		</h1>
-	)
+	);
 }
 
-export function PageTitle({
-	className,
-	children,
-	...props
-}: HTMLAttributes<HTMLHeadingElement>) {
+export function PageTitle({ className, children, ...props }: HTMLAttributes<HTMLHeadingElement>) {
 	return (
 		<h1
 			{...props}
@@ -136,7 +116,7 @@ export function PageTitle({
 		>
 			{children}
 		</h1>
-	)
+	);
 }
 
 export function SectionTitle({
@@ -146,34 +126,18 @@ export function SectionTitle({
 	...props
 }: HTMLAttributes<HTMLHeadingElement> & { as?: "h2" | "h3" | "h4" }) {
 	return (
-		<Tag
-			{...props}
-			className={cn(
-				"m-0 font-serif font-medium text-2xl leading-[1.2]",
-				className,
-			)}
-		>
+		<Tag {...props} className={cn("m-0 font-serif font-medium text-2xl leading-[1.2]", className)}>
 			{children}
 		</Tag>
-	)
+	);
 }
 
-export function BodyCopy({
-	className,
-	children,
-	...props
-}: HTMLAttributes<HTMLParagraphElement>) {
+export function BodyCopy({ className, children, ...props }: HTMLAttributes<HTMLParagraphElement>) {
 	return (
-		<p
-			{...props}
-			className={cn(
-				"m-0 text-base leading-[1.5] text-text-primary",
-				className,
-			)}
-		>
+		<p {...props} className={cn("m-0 text-base leading-[1.5] text-text-primary", className)}>
 			{children}
 		</p>
-	)
+	);
 }
 
 export function MutedCopy({
@@ -183,16 +147,10 @@ export function MutedCopy({
 	...props
 }: HTMLAttributes<HTMLElement> & { as?: "p" | "span" | "div" }) {
 	return (
-		<Tag
-			{...props}
-			className={cn(
-				"m-0 text-sm leading-[1.45] text-text-muted",
-				className,
-			)}
-		>
+		<Tag {...props} className={cn("m-0 text-sm leading-[1.45] text-text-muted", className)}>
 			{children}
 		</Tag>
-	)
+	);
 }
 
 export function MetaLabel({
@@ -203,32 +161,22 @@ export function MetaLabel({
 	return (
 		<label
 			{...props}
-			className={cn(
-				"text-xs leading-4 tracking-[0.12em] uppercase text-text-muted",
-				className,
-			)}
+			className={cn("text-xs leading-4 tracking-[0.12em] uppercase text-text-muted", className)}
 		>
 			{children}
 		</label>
-	)
+	);
 }
 
-export function MetaLabelSpan({
-	className,
-	children,
-	...props
-}: HTMLAttributes<HTMLSpanElement>) {
+export function MetaLabelSpan({ className, children, ...props }: HTMLAttributes<HTMLSpanElement>) {
 	return (
 		<span
 			{...props}
-			className={cn(
-				"text-xs leading-4 tracking-[0.12em] uppercase text-text-muted",
-				className,
-			)}
+			className={cn("text-xs leading-4 tracking-[0.12em] uppercase text-text-muted", className)}
 		>
 			{children}
 		</span>
-	)
+	);
 }
 
 /* ---------- Buttons ---------- */
@@ -238,7 +186,7 @@ const PRIMARY_BUTTON_BASE =
 	"bg-gradient-to-b from-[#3b82f6] to-[#2563eb] " +
 	"shadow-[0_0_0_1px_rgb(0_0_0/0.08),0_2px_2px_rgb(0_0_0/0.06),0_8px_8px_-8px_rgb(0_0_0/0.08)] " +
 	"transition-transform duration-[180ms] hover:-translate-y-px " +
-	"disabled:opacity-[0.55] disabled:cursor-not-allowed disabled:transform-none"
+	"disabled:opacity-[0.55] disabled:cursor-not-allowed disabled:transform-none";
 
 export function PrimaryButton({
 	label,
@@ -248,9 +196,9 @@ export function PrimaryButton({
 	type = "button",
 	...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
-	label: ReactNode
-	icon?: ReactNode
-	fullWidth?: boolean
+	label: ReactNode;
+	icon?: ReactNode;
+	fullWidth?: boolean;
 }) {
 	return (
 		<button
@@ -263,12 +211,12 @@ export function PrimaryButton({
 				{icon}
 			</span>
 		</button>
-	)
+	);
 }
 
 const CHIP_BASE =
 	"inline-flex items-center justify-center h-7 px-[18px] rounded-lg text-[13px] leading-[18px] " +
-	"transition-[background-color,box-shadow,transform] duration-[180ms] hover:-translate-y-px"
+	"transition-[background-color,box-shadow,transform] duration-[180ms] hover:-translate-y-px";
 
 export function ChipButton({
 	variant = "default",
@@ -278,8 +226,8 @@ export function ChipButton({
 	as,
 	...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
-	variant?: "default" | "primary"
-	as?: "button" | "a"
+	variant?: "default" | "primary";
+	as?: "button" | "a";
 } & Record<string, any>) {
 	const classes = cn(
 		CHIP_BASE,
@@ -288,19 +236,19 @@ export function ChipButton({
 		variant === "primary" &&
 			"bg-gradient-to-b from-[#3b82f6] to-[#2563eb] text-white shadow-[0_0_0_1px_rgb(0_0_0/0.08),0_2px_2px_rgb(0_0_0/0.06),0_8px_8px_-8px_rgb(0_0_0/0.08)]",
 		className,
-	)
+	);
 	if (as === "a") {
 		return (
 			<a {...(props as any)} className={classes}>
 				{children}
 			</a>
-		)
+		);
 	}
 	return (
 		<button {...props} type={type ?? "button"} className={classes}>
 			{children}
 		</button>
-	)
+	);
 }
 
 export function GhostButton({
@@ -321,7 +269,7 @@ export function GhostButton({
 		>
 			{children}
 		</div>
-	)
+	);
 }
 
 export function ColumnInlineButton({
@@ -342,7 +290,7 @@ export function ColumnInlineButton({
 		>
 			{children}
 		</button>
-	)
+	);
 }
 
 export function TextAction({
@@ -362,7 +310,7 @@ export function TextAction({
 		>
 			{children}
 		</button>
-	)
+	);
 }
 
 export function DangerAction({
@@ -382,34 +330,24 @@ export function DangerAction({
 		>
 			{children}
 		</button>
-	)
+	);
 }
 
 /* ---------- Inputs ---------- */
 
 const INPUT_SHELL_BASE =
-	"w-full border border-border rounded-[10px] bg-[#fbfbfc] text-text-primary outline-none transition-colors duration-[180ms] focus:border-accent"
+	"w-full border border-border rounded-[10px] bg-[#fbfbfc] text-text-primary outline-none transition-colors duration-[180ms] focus:border-accent";
 
-export function Input({
-	className,
-	...props
-}: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
 	return (
 		<input
 			{...props}
-			className={cn(
-				INPUT_SHELL_BASE,
-				"h-[46px] px-[14px] text-lg leading-6",
-				className,
-			)}
+			className={cn(INPUT_SHELL_BASE, "h-[46px] px-[14px] text-lg leading-6", className)}
 		/>
-	)
+	);
 }
 
-export function Textarea({
-	className,
-	...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
 	return (
 		<textarea
 			{...props}
@@ -419,13 +357,10 @@ export function Textarea({
 				className,
 			)}
 		/>
-	)
+	);
 }
 
-export function ColumnTitleInput({
-	className,
-	...props
-}: InputHTMLAttributes<HTMLInputElement>) {
+export function ColumnTitleInput({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
 	return (
 		<input
 			{...props}
@@ -435,7 +370,7 @@ export function ColumnTitleInput({
 				className,
 			)}
 		/>
-	)
+	);
 }
 
 /* ---------- Navigation / headers ---------- */
@@ -458,7 +393,7 @@ export function UtilityHeader({
 		>
 			{children}
 		</header>
-	)
+	);
 }
 
 export function Brand({
@@ -476,7 +411,7 @@ export function Brand({
 		>
 			{children}
 		</div>
-	)
+	);
 }
 
 export function UtilityNav({
@@ -497,7 +432,7 @@ export function UtilityNav({
 		>
 			{children}
 		</nav>
-	)
+	);
 }
 
 export function UtilityLink({
@@ -515,7 +450,7 @@ export function UtilityLink({
 		>
 			{children}
 		</a>
-	)
+	);
 }
 
 export function UtilityLinkSpan({
@@ -533,14 +468,10 @@ export function UtilityLinkSpan({
 		>
 			{children}
 		</span>
-	)
+	);
 }
 
-export function UtilityPill({
-	className,
-	children,
-	...props
-}: HTMLAttributes<HTMLSpanElement>) {
+export function UtilityPill({ className, children, ...props }: HTMLAttributes<HTMLSpanElement>) {
 	return (
 		<span
 			{...props}
@@ -551,7 +482,7 @@ export function UtilityPill({
 		>
 			{children}
 		</span>
-	)
+	);
 }
 
 /* ---------- NoticeBar ---------- */
@@ -575,7 +506,7 @@ export function NoticeBar({
 				{meta}
 			</span>
 		</div>
-	)
+	);
 }
 
 /* ---------- Modal / DetailModal ---------- */
@@ -584,8 +515,8 @@ export function Modal({
 	onClose,
 	children,
 }: {
-	onClose: () => void
-	children: ReactNode
+	onClose: () => void;
+	children: ReactNode;
 }) {
 	return (
 		<div
@@ -599,15 +530,15 @@ export function Modal({
 				{children}
 			</div>
 		</div>
-	)
+	);
 }
 
 export function DetailModal({
 	onClose,
 	children,
 }: {
-	onClose: () => void
-	children: ReactNode
+	onClose: () => void;
+	children: ReactNode;
 }) {
 	return (
 		<div
@@ -624,28 +555,22 @@ export function DetailModal({
 				{children}
 			</div>
 		</div>
-	)
+	);
 }
 
 export function DetailBody({ children }: { children: ReactNode }) {
-	return <div className="p-6">{children}</div>
+	return <div className="p-6">{children}</div>;
 }
 
 export function DetailFooter({ children }: { children: ReactNode }) {
 	return (
-		<div className="flex justify-end px-6 pt-[18px] pb-6 border-t border-border">
-			{children}
-		</div>
-	)
+		<div className="flex justify-end px-6 pt-[18px] pb-6 border-t border-border">{children}</div>
+	);
 }
 
 /* ---------- Toggle ---------- */
 
-export function ToggleRow({
-	className,
-	children,
-	...props
-}: HTMLAttributes<HTMLDivElement>) {
+export function ToggleRow({ className, children, ...props }: HTMLAttributes<HTMLDivElement>) {
 	return (
 		<div
 			{...props}
@@ -657,7 +582,7 @@ export function ToggleRow({
 		>
 			{children}
 		</div>
-	)
+	);
 }
 
 export function Toggle({
@@ -666,8 +591,8 @@ export function Toggle({
 	className,
 	...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
-	checked: boolean
-	onChange: () => void
+	checked: boolean;
+	onChange: () => void;
 }) {
 	return (
 		<button
@@ -683,7 +608,7 @@ export function Toggle({
 				className,
 			)}
 		/>
-	)
+	);
 }
 
 /* ---------- Badges / Presence ---------- */
@@ -704,11 +629,91 @@ export function AgentBadge({
 		>
 			{children}
 		</span>
-	)
+	);
+}
+
+export type CardPriorityValue = "low" | "medium" | "high" | "urgent";
+
+const PRIORITY_LABELS: Record<CardPriorityValue, string> = {
+	low: "Low",
+	medium: "Medium",
+	high: "High",
+	urgent: "Urgent",
+};
+
+const PRIORITY_STYLES: Record<CardPriorityValue, string> = {
+	low: "bg-[color-mix(in_srgb,#94a3b8_18%,white)] text-[#475569]",
+	medium: "bg-[color-mix(in_srgb,#f59e0b_18%,white)] text-[#b45309]",
+	high: "bg-[color-mix(in_srgb,#f97316_22%,white)] text-[#c2410c]",
+	urgent: "bg-[color-mix(in_srgb,var(--color-danger)_22%,white)] text-danger",
+};
+
+export function PriorityBadge({
+	priority,
+	className,
+	...props
+}: HTMLAttributes<HTMLSpanElement> & { priority: CardPriorityValue }) {
+	return (
+		<span
+			{...props}
+			className={cn(
+				"inline-flex items-center gap-[6px] h-5 px-[8px] rounded-full text-[11px] leading-[14px] font-medium",
+				PRIORITY_STYLES[priority],
+				className,
+			)}
+		>
+			<span
+				aria-hidden="true"
+				className="inline-block w-[6px] h-[6px] rounded-full bg-current opacity-80"
+			/>
+			{PRIORITY_LABELS[priority]}
+		</span>
+	);
+}
+
+function isOverdue(iso: string) {
+	const due = new Date(iso);
+	if (Number.isNaN(due.getTime())) return false;
+	const today = new Date();
+	today.setHours(0, 0, 0, 0);
+	return due.getTime() < today.getTime();
+}
+
+function formatDueDate(iso: string) {
+	const due = new Date(iso);
+	if (Number.isNaN(due.getTime())) return iso;
+	return due.toLocaleDateString(undefined, {
+		month: "short",
+		day: "numeric",
+	});
+}
+
+export function DueDateBadge({
+	dueDate,
+	className,
+	...props
+}: HTMLAttributes<HTMLSpanElement> & { dueDate: string }) {
+	const overdue = isOverdue(dueDate);
+	return (
+		<span
+			{...props}
+			className={cn(
+				"inline-flex items-center gap-[6px] h-5 px-[8px] rounded-full text-[11px] leading-[14px] font-medium",
+				overdue
+					? "bg-[color-mix(in_srgb,var(--color-danger)_18%,white)] text-danger"
+					: "bg-surface-muted text-text-secondary shadow-[inset_0_0_0_1px_var(--color-border)]",
+				className,
+			)}
+			title={overdue ? `Overdue · ${dueDate}` : `Due ${dueDate}`}
+		>
+			<span aria-hidden="true">{overdue ? "⏰" : "📅"}</span>
+			{formatDueDate(dueDate)}
+		</span>
+	);
 }
 
 export function PresenceStrip({ children }: { children: ReactNode }) {
-	return <div className="flex items-center gap-[10px]">{children}</div>
+	return <div className="flex items-center gap-[10px]">{children}</div>;
 }
 
 export function PresenceBubble({
@@ -716,9 +721,9 @@ export function PresenceBubble({
 	title,
 	children,
 }: {
-	human?: boolean
-	title?: string
-	children: ReactNode
+	human?: boolean;
+	title?: string;
+	children: ReactNode;
 }) {
 	return (
 		<div
@@ -733,45 +738,32 @@ export function PresenceBubble({
 		>
 			{children}
 		</div>
-	)
+	);
 }
 
 export function PresenceDot({
 	connected,
 	title,
 }: {
-	connected: boolean
-	title?: string
+	connected: boolean;
+	title?: string;
 }) {
 	return (
 		<div
 			title={title}
-			className={cn(
-				"w-2 h-2 rounded-full",
-				connected ? "bg-success" : "bg-danger",
-			)}
+			className={cn("w-2 h-2 rounded-full", connected ? "bg-success" : "bg-danger")}
 		/>
-	)
+	);
 }
 
 /* ---------- Board card / feature card ---------- */
 
-export function FeatureGrid({
-	className,
-	children,
-	...props
-}: HTMLAttributes<HTMLElement>) {
+export function FeatureGrid({ className, children, ...props }: HTMLAttributes<HTMLElement>) {
 	return (
-		<section
-			{...props}
-			className={cn(
-				"grid grid-cols-3 gap-3 max-[900px]:grid-cols-1",
-				className,
-			)}
-		>
+		<section {...props} className={cn("grid grid-cols-3 gap-3 max-[900px]:grid-cols-1", className)}>
 			{children}
 		</section>
-	)
+	);
 }
 
 export function FeatureCard({
@@ -779,25 +771,21 @@ export function FeatureCard({
 	title,
 	copy,
 }: {
-	id: ReactNode
-	title: ReactNode
-	copy: ReactNode
+	id: ReactNode;
+	title: ReactNode;
+	copy: ReactNode;
 }) {
 	return (
 		<article className="flex flex-col gap-[10px] p-[14px] rounded-[10px] bg-surface ring-1 ring-inset ring-border-soft">
-			<div className="text-xs leading-4 tracking-[0.12em] uppercase text-text-muted">
-				{id}
-			</div>
-			<h2 className="m-0 font-serif font-medium text-[22px] leading-[1.15]">
-				{title}
-			</h2>
+			<div className="text-xs leading-4 tracking-[0.12em] uppercase text-text-muted">{id}</div>
+			<h2 className="m-0 font-serif font-medium text-[22px] leading-[1.15]">{title}</h2>
 			<p className="m-0 text-sm leading-[1.45] text-text-secondary">{copy}</p>
 		</article>
-	)
+	);
 }
 
 export const scrollbarThinClass =
 	"[&::-webkit-scrollbar]:w-[6px] [&::-webkit-scrollbar]:h-[6px] " +
 	"[&::-webkit-scrollbar-track]:bg-transparent " +
 	"[&::-webkit-scrollbar-thumb]:bg-[color-mix(in_srgb,var(--color-text-subtle)_50%,transparent)] " +
-	"[&::-webkit-scrollbar-thumb]:rounded-full"
+	"[&::-webkit-scrollbar-thumb]:rounded-full";

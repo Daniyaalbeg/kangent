@@ -1,10 +1,10 @@
 import { getAgentByName, routeAgentRequest } from "agents"
-import { BoardAgent } from "@kangent/board-worker"
+import { BoardAgentSqlite } from "@kangent/board-worker"
 
-export { BoardAgent }
+export { BoardAgentSqlite }
 
 export interface Env {
-	BOARD: DurableObjectNamespace<BoardAgent>
+	BOARD_SQLITE: DurableObjectNamespace<BoardAgentSqlite>
 	ASSETS: Fetcher
 }
 
@@ -183,7 +183,7 @@ async function handleApiRequest(
 	}
 
 	const boardId = match[1]
-	const stub = await getAgentByName(env.BOARD, boardId)
+	const stub = await getAgentByName(env.BOARD_SQLITE, boardId)
 
 	// Forward the full request to the board agent instance.
 	return stub.fetch(request)
@@ -209,7 +209,7 @@ async function handleCreateBoard(request: Request, env: Env): Promise<Response> 
 
 	// Generate a unique board ID and initialize its board agent instance.
 	const boardId = crypto.randomUUID().replace(/-/g, "").slice(0, 12)
-	const stub = await getAgentByName(env.BOARD, boardId)
+	const stub = await getAgentByName(env.BOARD_SQLITE, boardId)
 	const board = await stub.initializeBoard({
 		title: body.title,
 		description: body.description,

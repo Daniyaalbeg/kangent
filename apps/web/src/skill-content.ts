@@ -106,13 +106,25 @@ All writes include \`by: "ai:<your-name>"\` for provenance. The board's \`versio
 ### Add a card
 \`\`\`
 POST ${baseUrl}/api/boards/<boardId>/cards
-{ "columnId": "col_1", "title": "Implement search", "description": "...", "by": "ai:claude" }
+{
+  "columnId": "col_1",
+  "title": "Implement search",
+  "description": "...",
+  "priority": "high",            // optional: "low" | "medium" | "high" | "urgent"
+  "dueDate": "2026-05-12",       // optional: ISO-8601 date or date-time
+  "by": "ai:claude"
+}
 \`\`\`
 
 ### Update a card
 \`\`\`
 PATCH ${baseUrl}/api/boards/<boardId>/cards/<cardId>
-{ "title": "Updated title", "by": "ai:claude" }
+{
+  "title": "Updated title",
+  "priority": "urgent",          // omit to leave unchanged; pass null to clear
+  "dueDate": null,               // example: explicitly remove the due date
+  "by": "ai:claude"
+}
 \`\`\`
 
 ### Move a card
@@ -135,6 +147,20 @@ DELETE ${baseUrl}/api/boards/<boardId>/columns/<colId>?moveCardsTo=col_2&by=ai:c
 
 Deleting a non-empty column without \`moveCardsTo\` returns \`409 ColumnNotEmpty\`.
 
+### Reorder columns
+
+Pass a permutation of every current column id, in the new order. Partial lists,
+duplicates, or unknown ids are rejected with \`400 ValidationError\` /
+\`404 ColumnNotFound\` — the server never guesses where missing ids should land.
+
+\`\`\`
+POST ${baseUrl}/api/boards/<boardId>/columns/reorder
+{ "columnIds": ["col_doing", "col_todo", "col_done"], "by": "ai:claude" }
+\`\`\`
+
+This emits a \`column:reorder\` change with \`columnIds\` set to the new order.
+Apply by sorting your local columns to match.
+
 ## Presence
 
 Tell humans you're there:
@@ -156,18 +182,19 @@ Statuses: \`viewing\`, \`working\`, \`idle\`.
 
 ## Error Handling
 
-| Status | Body \`_tag\`       | Meaning                              |
-|--------|--------------------|--------------------------------------|
-| 400    | —                  | Missing/invalid params (incl. missing \`X-Agent-Id\` on \`/changes\`) |
-| 404    | \`BoardNotFound\`  | \`boardId\` doesn't exist             |
-| 404    | \`CardNotFound\`   | \`cardId\` doesn't exist              |
-| 404    | \`ColumnNotFound\` | \`columnId\` doesn't exist            |
-| 409    | \`ColumnNotEmpty\` | Deleting a non-empty column; pass \`moveCardsTo\` |
+| Status | Body \`_tag\`        | Meaning                              |
+|--------|---------------------|--------------------------------------|
+| 400    | —                   | Missing/invalid params (incl. missing \`X-Agent-Id\` on \`/changes\`) |
+| 400    | \`ValidationError\` | Malformed reorder payload (wrong length, duplicate ids, etc.) |
+| 404    | \`BoardNotFound\`   | \`boardId\` doesn't exist             |
+| 404    | \`CardNotFound\`    | \`cardId\` doesn't exist              |
+| 404    | \`ColumnNotFound\`  | \`columnId\` doesn't exist            |
+| 409    | \`ColumnNotEmpty\`  | Deleting a non-empty column; pass \`moveCardsTo\` |
 
 ## Tips
 
 - Use the same \`X-Agent-Id\` for the whole session so the cursor stays correct.
 - Always include \`"by": "ai:<your-name>"\` on writes.
 - If you think the server is wrong, the changelog entry has \`by\` and \`at\` — check who did what before assuming bugs.
-`
+`;
 }

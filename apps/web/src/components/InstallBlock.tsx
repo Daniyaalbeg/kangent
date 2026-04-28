@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState } from "react";
 
 // GitHub slug the skills.sh CLI resolves. Must match a public repo containing
 // SKILL.md at the root (or under skills/<name>/ for monorepo layout). Update
 // this once we publish — see README's TODO.
-const SKILL_REPO = "daniyaalbeg/kangent"
+const SKILL_REPO = "daniyaalbeg/kangent";
 
-const INSTALL_CMD = `npx skills add ${SKILL_REPO}`
+const INSTALL_CMD = `npx skills add ${SKILL_REPO}`;
 
 function buildAgentPrompt(baseUrl: string): string {
 	return `Kangent is a real-time Kanban board for humans and agents. Boards live at URLs; you collaborate with a human (or other agents) over a shared board with cards, columns, and presence.
@@ -15,21 +15,19 @@ Install the skill with: npx skills add ${SKILL_REPO}
 
 When you join a board, call GET ${baseUrl}/api/boards/<boardId>/changes with an X-Agent-Id header (a stable id for this agent instance) BEFORE doing anything else. That endpoint returns only what changed since your last visit — do not re-read the whole board. If the response says isFirstSync:true, use the snapshot field to seed your cache.
 
-Always include "by": "ai:<your-name>" on writes so humans can see who did what.
-
-Board URL: <paste the board URL here>`
+Always include "by": "ai:<your-name>" on writes so humans can see who did what.`;
 }
 
 function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
-	const [copied, setCopied] = useState(false)
+	const [copied, setCopied] = useState(false);
 	return (
 		<button
 			type="button"
 			onClick={async () => {
 				try {
-					await navigator.clipboard.writeText(value)
-					setCopied(true)
-					setTimeout(() => setCopied(false), 1500)
+					await navigator.clipboard.writeText(value);
+					setCopied(true);
+					setTimeout(() => setCopied(false), 1500);
 				} catch {
 					// Clipboard API blocked; user can still select manually.
 				}
@@ -38,19 +36,19 @@ function CopyButton({ value, label = "Copy" }: { value: string; label?: string }
 		>
 			{copied ? "Copied" : label}
 		</button>
-	)
+	);
 }
 
 export function InstallBlock() {
 	// Use whatever origin the user is actually viewing — localhost in dev,
 	// the production host in prod — so the prompt they copy matches.
 	// Starts empty to avoid an SSR/hydration mismatch; populated on mount.
-	const [baseUrl, setBaseUrl] = useState("")
+	const [baseUrl, setBaseUrl] = useState("");
 	useEffect(() => {
-		setBaseUrl(window.location.origin)
-	}, [])
+		setBaseUrl(window.location.origin);
+	}, []);
 
-	const agentPrompt = buildAgentPrompt(baseUrl)
+	const agentPrompt = buildAgentPrompt(baseUrl);
 
 	return (
 		<section className="mt-14 flex flex-col gap-10">
@@ -93,8 +91,7 @@ export function InstallBlock() {
 					Hand this to your agent
 				</h2>
 				<p className="mt-2 text-sm text-zinc-600">
-					No install required. Works with any agent that can read text and
-					make HTTP calls.
+					No install required. Works with any agent that can read text and make HTTP calls.
 				</p>
 
 				<div className="relative mt-3">
@@ -107,5 +104,5 @@ export function InstallBlock() {
 				</div>
 			</div>
 		</section>
-	)
+	);
 }

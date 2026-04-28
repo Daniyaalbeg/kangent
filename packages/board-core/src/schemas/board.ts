@@ -1,7 +1,10 @@
-import { Schema } from "effect"
+import { Schema } from "effect";
 
-export const ActorId = Schema.String.pipe(Schema.brand("ActorId"))
-export type ActorId = typeof ActorId.Type
+export const ActorId = Schema.String.pipe(Schema.brand("ActorId"));
+export type ActorId = typeof ActorId.Type;
+
+export const CardPriority = Schema.Literal("low", "medium", "high", "urgent");
+export type CardPriority = typeof CardPriority.Type;
 
 export class Column extends Schema.Class<Column>("Column")({
 	id: Schema.String,
@@ -16,6 +19,10 @@ export class Card extends Schema.Class<Card>("Card")({
 	title: Schema.String,
 	description: Schema.Unknown,
 	position: Schema.Number,
+	// Optional flagging fields. Either may be set/cleared independently by the
+	// UI or by an agent. dueDate is an ISO-8601 date or date-time string.
+	priority: Schema.optional(CardPriority),
+	dueDate: Schema.optional(Schema.String),
 	createdBy: ActorId,
 	createdAt: Schema.String,
 	updatedAt: Schema.String,

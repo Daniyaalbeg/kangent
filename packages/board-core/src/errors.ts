@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema } from "effect";
 
 export class BoardNotFound extends Schema.TaggedError<BoardNotFound>()("BoardNotFound", {
 	boardId: Schema.String,

@@ -5,8 +5,9 @@ const app = await alchemy("kangent", {
 	phase: process.argv.includes("--destroy") ? "destroy" : "up",
 })
 
-const boardDO = DurableObjectNamespace("board-do", {
-	className: "BoardAgent",
+const boardDO = DurableObjectNamespace("board-agent-sqlite", {
+	className: "BoardAgentSqlite",
+	sqlite: true,
 })
 
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
@@ -24,7 +25,7 @@ export const worker = await Vite("kangent-web", {
 	compatibilityDate: "2025-09-15",
 	compatibilityFlags: ["nodejs_compat"],
 	bindings: {
-		BOARD: boardDO,
+		BOARD_SQLITE: boardDO,
 	},
 	// Worker must run before the static-asset handler so it can own
 	// /kangent.SKILL.md, /agent-docs, /.well-known/kangent.json, and the
