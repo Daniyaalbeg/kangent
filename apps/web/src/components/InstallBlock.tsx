@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
 
-// GitHub slug the skills.sh CLI resolves. Must match a public repo containing
-// SKILL.md at the root (or under skills/<name>/ for monorepo layout). Update
-// this once we publish — see README's TODO.
+// GitHub slug the skills.sh CLI resolves. The CLI looks for SKILL.md under
+// skills/<name>/ inside the repo and copies that directory verbatim — so the
+// canonical skill lives at skills/kangent/SKILL.md, kept alone in its folder
+// so installs don't pull in the rest of the monorepo. Update this once we
+// publish.
 const SKILL_REPO = "daniyaalbeg/kangent";
+const SKILL_RAW_URL = `https://raw.githubusercontent.com/${SKILL_REPO}/main/skills/kangent/SKILL.md`;
+const SKILL_VIEW_URL = `https://github.com/${SKILL_REPO}/blob/main/skills/kangent/SKILL.md`;
 
 const INSTALL_CMD = `npx skills add ${SKILL_REPO}`;
 
@@ -11,7 +15,7 @@ function buildAgentPrompt(baseUrl: string): string {
 	return `Kangent is a real-time Kanban board for humans and agents. Boards live at URLs; you collaborate with a human (or other agents) over a shared board with cards, columns, and presence.
 
 Install the skill with: npx skills add ${SKILL_REPO}
-(or follow the skill inline from ${baseUrl}/kangent.SKILL.md if you can't run shell)
+(or fetch the skill inline from ${SKILL_RAW_URL} if you can't run shell)
 
 When you join a board, call GET ${baseUrl}/api/boards/<boardId>/changes with an X-Agent-Id header (a stable id for this agent instance) BEFORE doing anything else. That endpoint returns only what changed since your last visit — do not re-read the whole board. If the response says isFirstSync:true, use the snapshot field to seed your cache.
 
@@ -80,8 +84,16 @@ export function InstallBlock() {
 				</div>
 
 				<p className="mt-3 text-xs text-zinc-500">
-					Want the version served by this exact deployment instead? Fetch{" "}
-					<code className="text-xs">{baseUrl || "<this host>"}/kangent.SKILL.md</code>.
+					Or read the skill on GitHub:{" "}
+					<a
+						href={SKILL_VIEW_URL}
+						className="underline underline-offset-2"
+						target="_blank"
+						rel="noreferrer"
+					>
+						skills/kangent/SKILL.md
+					</a>
+					.
 				</p>
 			</div>
 

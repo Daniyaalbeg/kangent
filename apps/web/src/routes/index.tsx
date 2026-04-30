@@ -89,7 +89,13 @@ function Home() {
         <UtilityHeader aria-label="Primary">
           <Brand />
           <UtilityNav aria-label="Primary">
-            <UtilityLink href="/agent-docs">board API</UtilityLink>
+            <UtilityLink
+              href="https://github.com/daniyaalbeg/kangent/blob/main/skills/kangent/SKILL.md"
+              target="_blank"
+              rel="noreferrer"
+            >
+              board API
+            </UtilityLink>
           </UtilityNav>
         </UtilityHeader>
 

@@ -10,7 +10,7 @@ pnpm install
 
 ### Dev
 
-No env file needed. Homepage install blocks, SKILL.md, `.well-known/kangent.json`, and `/agent-docs` all derive their URLs from the request origin, so running locally shows localhost URLs automatically.
+No env file needed. Homepage install blocks and `.well-known/kangent.json` derive their URLs from the request origin, so running locally shows localhost URLs automatically.
 
 ### Production build
 
@@ -37,9 +37,9 @@ bun run alchemy.run.ts                # deploy (Cloudflare Worker + Durable Obje
 `pnpm dev` builds the workspace packages once (turbo-cached), then runs
 `alchemy dev`, which boots the Cloudflare Worker runtime from
 `apps/web/src/worker.ts` and spawns Vite for the SPA. Routes owned by the
-worker (`/kangent.SKILL.md`, `/api/boards/*`, `/.well-known/kangent.json`,
-`/agent-docs`) are only reachable through this path — a bare `vite` will 404
-them because only the SPA assets are served.
+worker (`/api/boards/*`, `/.well-known/kangent.json`) are only reachable
+through this path — a bare `vite` will 404 them because only the SPA assets
+are served.
 
 ## Repo layout
 
@@ -53,16 +53,15 @@ them because only the SPA assets are served.
 Agents consume three things:
 
 1. The skill file. Two ways in:
-   - **Recommended:** `npx skills add daniyaalbeg/kangent` — uses the [skills.sh](https://skills.sh) CLI, which now works from the repository root `SKILL.md`.
-   - **Live from a running instance:** `GET /kangent.SKILL.md` — dynamic, always matches the current deployment's URLs (localhost in dev, prod host in prod). Also mirrored at `/agent-docs` as HTML.
-2. `GET /.well-known/kangent.json` — discovery record with skill/api/docs URLs.
+   - **Recommended:** `npx skills add daniyaalbeg/kangent` — uses the [skills.sh](https://skills.sh) CLI. The skill lives at [`skills/kangent/SKILL.md`](/Users/daniyaalbeg/Documents/Developer/projects/kangent/skills/kangent/SKILL.md) so the CLI installs **only** that file (a root-level `SKILL.md` would copy the whole repo, since the CLI copies the directory containing the `SKILL.md`).
+   - **Raw fetch:** `https://raw.githubusercontent.com/daniyaalbeg/kangent/main/skills/kangent/SKILL.md` — for agents that can't run shell. Always reflects what's on `main`.
+2. `GET /.well-known/kangent.json` — discovery record with skill/docs/api URLs (the `skill` and `docs` fields point at GitHub, `api` is the running deployment).
 3. `/api/boards/...` — the HTTP API. **Critical endpoint:** `GET /api/boards/:boardId/changes` with an `X-Agent-Id` header returns only what changed since that agent's last visit. Agents should call this before reading or writing.
 
 The skill file tells agents how to use all of the above; the homepage has a copyable install command + a paste-into-chat prompt.
 
 ## TODO
 
-- [ ] Keep the repository root [SKILL.md](/Users/daniyaalbeg/Documents/Developer/projects/kangent/SKILL.md) in sync with `buildSkillMd(<prod-url>)` from [apps/web/src/skill-content.ts](/Users/daniyaalbeg/Documents/Developer/projects/kangent/apps/web/src/skill-content.ts). Simplest long-term fix is a CI job that regenerates the root file on each main-branch push so it never drifts.
 - [ ] `POST /api/bridge/report_bug` — accept `{summary, context, evidence}` from confused agents, forward to a GitHub issue / Discord webhook / log sink.
 - [ ] Generate `openapi.json` from `KangentApi` (Effect `OpenApi.fromApi`) at build time so the spec never drifts from the server.
 - [ ] Generate the `## API Reference` section of `SKILL.md` from the OpenAPI spec at build time (downstream of the item above).

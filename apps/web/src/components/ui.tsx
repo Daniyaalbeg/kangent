@@ -1,4 +1,5 @@
 import type {
+	AnchorHTMLAttributes,
 	ButtonHTMLAttributes,
 	HTMLAttributes,
 	InputHTMLAttributes,
@@ -439,10 +440,10 @@ export function UtilityLink({
 	className,
 	children,
 	...props
-}: HTMLAttributes<HTMLAnchorElement> & { href?: string }) {
+}: AnchorHTMLAttributes<HTMLAnchorElement>) {
 	return (
 		<a
-			{...(props as any)}
+			{...props}
 			className={cn(
 				"text-[13px] leading-[18px] text-text-muted underline underline-offset-[3px]",
 				className,

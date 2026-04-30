@@ -28,10 +28,10 @@ export const worker = await Vite("kangent-web", {
 		BOARD_SQLITE: boardDO,
 	},
 	// Worker must run before the static-asset handler so it can own
-	// /kangent.SKILL.md, /agent-docs, /.well-known/kangent.json, and the
-	// /api/boards/* routes. Otherwise Cloudflare's assets layer (with SPA
-	// not_found_handling) intercepts them before the Worker sees the request.
-	// The Worker itself falls through to env.ASSETS.fetch at the end.
+	// /.well-known/kangent.json and the /api/boards/* routes. Otherwise
+	// Cloudflare's assets layer (with SPA not_found_handling) intercepts
+	// them before the Worker sees the request. The Worker itself falls
+	// through to env.ASSETS.fetch at the end.
 	assets: {
 		run_worker_first: true,
 	},
