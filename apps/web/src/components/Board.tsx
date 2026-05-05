@@ -18,6 +18,7 @@ import { AgentAvatars } from "./AgentAvatars";
 import { CardDetail } from "./CardDetail";
 import { Column, columnSortId } from "./Column";
 import { DragOverlay } from "./DragOverlay";
+import { ImportFromPhoto } from "./ImportFromPhoto";
 import {
 	ActionsRow,
 	Brand,
@@ -53,6 +54,7 @@ export function Board({ boardId }: BoardProps) {
 	const [shareCopied, setShareCopied] = useState(false);
 	const [editingTitle, setEditingTitle] = useState(false);
 	const [draftTitle, setDraftTitle] = useState("");
+	const [importingPhoto, setImportingPhoto] = useState(false);
 
 	const agent = useAgent<BoardAgentSqlite, BoardAgentState>({
 		agent: "BoardAgentSqlite",
@@ -314,6 +316,9 @@ export function Board({ boardId }: BoardProps) {
 						<UtilityLinkSpan>public board</UtilityLinkSpan>
 					</UtilityNav>
 					<UtilityNav>
+						<ChipButton onClick={() => setImportingPhoto(true)}>
+							import photo
+						</ChipButton>
 						<ChipButton onClick={() => void handleShare()}>
 							{shareCopied ? "copied" : "share"}
 						</ChipButton>
@@ -462,6 +467,17 @@ export function Board({ boardId }: BoardProps) {
 					onSave={(updates) => handleUpdateCard(selectedCard.id, updates)}
 					onMove={(toColumnId) => handleMoveCardFromModal(selectedCard.id, toColumnId)}
 					onDelete={() => handleDeleteCard(selectedCard.id)}
+				/>
+			)}
+
+			{importingPhoto && (
+				<ImportFromPhoto
+					columns={board.columns.map((column) => ({
+						id: column.id,
+						title: column.title,
+					}))}
+					onClose={() => setImportingPhoto(false)}
+					onImport={({ columnId, title }) => handleAddCard(columnId, title)}
 				/>
 			)}
 		</PageShell>
