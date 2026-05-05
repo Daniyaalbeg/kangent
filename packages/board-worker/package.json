@@ -20,7 +20,8 @@
     "@kangent/board-core": "workspace:*",
     "agents": "^0.11.5",
     "effect": "^3.21.1",
-    "nanoid": "^5.1.5"
+    "nanoid": "^5.1.5",
+    "posthog-node": "^5.33.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250410.0",

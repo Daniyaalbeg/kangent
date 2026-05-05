@@ -20,6 +20,7 @@ import {
 } from "@kangent/board-core";
 import { Agent, type Connection, type ConnectionContext, type WSMessage, callable } from "agents";
 import { nanoid } from "nanoid";
+import { PostHog } from "posthog-node";
 
 const CHANGELOG_RETENTION = 500;
 const PRESENCE_TTL_MS = 3 * 60 * 1000;
@@ -54,6 +55,17 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 
 	private get boardId() {
 		return this.name;
+	}
+
+	private makePostHog(): PostHog | null {
+		const env = this.env as unknown as { POSTHOG_API_KEY?: string; POSTHOG_HOST?: string };
+		if (!env.POSTHOG_API_KEY) return null;
+		return new PostHog(env.POSTHOG_API_KEY, {
+			host: env.POSTHOG_HOST,
+			flushAt: 1,
+			flushInterval: 0,
+			enableExceptionAutocapture: true,
+		});
 	}
 
 	async initializeBoard(params: CreateBoardParams) {
@@ -120,6 +132,20 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 
 			if (tail === "/state" && request.method === "GET") {
 				const snapshot = this.requireSnapshot();
+				const actorId = new URL(request.url).searchParams.get("actorId") ?? "human:anonymous";
+				const posthog = this.makePostHog();
+				if (posthog) {
+					await posthog.captureImmediate({
+						distinctId: actorId,
+						event: "board viewed",
+						properties: {
+							board_id: this.boardId,
+							board_title: snapshot.board.title,
+							actor_type: actorId.split(":")[0],
+						},
+					});
+					await posthog.shutdown();
+				}
 				return this.json({
 					board: { ...snapshot.board, cards: snapshot.cards },
 					presence: this.prunePresence(this.state.presence),
@@ -484,6 +510,20 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			by: params.by,
 		});
 
+		const posthog = this.makePostHog();
+		if (posthog) {
+			await posthog.captureImmediate({
+				distinctId: params.by,
+				event: "board updated",
+				properties: {
+					board_id: this.boardId,
+					board_title: board.title,
+					actor_type: params.by.split(":")[0],
+				},
+			});
+			await posthog.shutdown();
+		}
+
 		return { board, version };
 	}
 
@@ -530,6 +570,24 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			snapshot: card,
 			by: params.by,
 		});
+
+		const posthog = this.makePostHog();
+		if (posthog) {
+			await posthog.captureImmediate({
+				distinctId: params.by,
+				event: "card added",
+				properties: {
+					board_id: this.boardId,
+					card_id: card.id,
+					column_id: params.columnId,
+					card_title: card.title,
+					has_priority: params.priority != null,
+					has_due_date: params.dueDate != null,
+					actor_type: params.by.split(":")[0],
+				},
+			});
+			await posthog.shutdown();
+		}
 
 		return { card, version };
 	}
@@ -579,6 +637,21 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			snapshot: card,
 			by: updates.by,
 		});
+
+		const posthog = this.makePostHog();
+		if (posthog) {
+			await posthog.captureImmediate({
+				distinctId: updates.by,
+				event: "card updated",
+				properties: {
+					board_id: this.boardId,
+					card_id: cardId,
+					column_id: card.columnId,
+					actor_type: updates.by.split(":")[0],
+				},
+			});
+			await posthog.shutdown();
+		}
 
 		return { card, version };
 	}
@@ -632,6 +705,23 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			by: params.by,
 		});
 
+		const posthog = this.makePostHog();
+		if (posthog) {
+			await posthog.captureImmediate({
+				distinctId: params.by,
+				event: "card moved",
+				properties: {
+					board_id: this.boardId,
+					card_id: cardId,
+					from_column_id: existing.columnId,
+					to_column_id: params.toColumnId,
+					column_changed: existing.columnId !== params.toColumnId,
+					actor_type: params.by.split(":")[0],
+				},
+			});
+			await posthog.shutdown();
+		}
+
 		return { card, version };
 	}
 
@@ -667,6 +757,21 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			by,
 		});
 
+		const posthog = this.makePostHog();
+		if (posthog) {
+			await posthog.captureImmediate({
+				distinctId: by,
+				event: "card deleted",
+				properties: {
+					board_id: this.boardId,
+					card_id: cardId,
+					column_id: existing.columnId,
+					actor_type: by.split(":")[0],
+				},
+			});
+			await posthog.shutdown();
+		}
+
 		return { deleted: cardId, version };
 	}
 
@@ -698,6 +803,21 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			snapshot: column,
 			by,
 		});
+
+		const posthog = this.makePostHog();
+		if (posthog) {
+			await posthog.captureImmediate({
+				distinctId: by,
+				event: "column added",
+				properties: {
+					board_id: this.boardId,
+					column_id: column.id,
+					column_title: title,
+					actor_type: by.split(":")[0],
+				},
+			});
+			await posthog.shutdown();
+		}
 
 		return { column, version };
 	}
@@ -806,6 +926,21 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			snapshot: null,
 			by,
 		});
+
+		const posthog = this.makePostHog();
+		if (posthog) {
+			await posthog.captureImmediate({
+				distinctId: by,
+				event: "column deleted",
+				properties: {
+					board_id: this.boardId,
+					column_id: columnId,
+					cards_moved: cardsMoved,
+					actor_type: by.split(":")[0],
+				},
+			});
+			await posthog.shutdown();
+		}
 
 		return { deleted: columnId, cardsMoved, version };
 	}
@@ -961,7 +1096,7 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 		await this.ctx.storage.put(cursorKey(agentId), version);
 	}
 
-	private handleError(error: unknown) {
+	private async handleError(error: unknown) {
 		const tag = (error as { _tag?: string } | null)?._tag;
 		if (tag === "BoardNotFound") {
 			const typed = error as BoardNotFound;
@@ -984,6 +1119,11 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			return this.json({ _tag: tag, message: typed.message }, 400);
 		}
 
+		const posthog = this.makePostHog();
+		if (posthog) {
+			await posthog.captureExceptionImmediate(error as Error, "server");
+			await posthog.shutdown();
+		}
 		const message = error instanceof Error ? error.message : "Internal error";
 		return this.json({ error: message }, 500);
 	}
