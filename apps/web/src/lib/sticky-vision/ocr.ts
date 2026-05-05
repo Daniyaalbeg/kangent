@@ -20,7 +20,17 @@ export interface OcrProgress {
 
 /** Lazy-create a singleton Tesseract worker. The first call kicks off the
  * download of core wasm + the English model (`eng.traineddata`) which adds
- * ~10 MB on first ever use; subsequent loads hit the browser cache. */
+ * ~10 MB on first ever use; subsequent loads hit the browser cache.
+ *
+ * Two parameter tweaks worth knowing about:
+ *   - `tessedit_pageseg_mode = 6` (PSM_SINGLE_BLOCK): each sticky note is a
+ *     uniform block of text, not a multi-column document. Default PSM 3
+ *     (auto) tries to find columns and gets confused on tiny crops.
+ *   - `user_defined_dpi = 300`: silences Tesseract's "low-resolution image"
+ *     warning and tells it to skip its DPI heuristic. We've already 2×
+ *     upscaled the preprocessed crop in the vision worker, so the input is
+ *     effectively in the 200–300 DPI range Tesseract expects.
+ */
 export function ensureOcrWorker(
 	onProgress?: (p: OcrProgress) => void,
 ): Promise<Worker> {
@@ -35,6 +45,10 @@ export function ensureOcrWorker(
 				? (m: { status: string; progress?: number }) =>
 						onProgress({ status: m.status, progress: m.progress ?? 0 })
 				: undefined,
+		});
+		await worker.setParameters({
+			tessedit_pageseg_mode: "6" as any,
+			user_defined_dpi: "300",
 		});
 		return worker;
 	})();

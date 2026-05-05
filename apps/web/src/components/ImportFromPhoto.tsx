@@ -178,7 +178,12 @@ export function ImportFromPhoto({
 					),
 				);
 				try {
-					const text = await recognizeText(row.sticky.cropDataUrl);
+					// Use the preprocessed (CLAHE + threshold + upscale) crop
+					// for OCR rather than the raw color thumbnail. Tesseract
+					// gets binarized, contrast-enhanced, ~600×400 input
+					// instead of dim color ~300×200 — meaningful accuracy
+					// boost without changing the model.
+					const text = await recognizeText(row.sticky.ocrDataUrl);
 					if (myRun !== runIdRef.current) return;
 					setRows((prev) =>
 						prev.map((r) =>

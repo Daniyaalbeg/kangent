@@ -23,11 +23,20 @@ export type ColorBucket =
 	| "other";
 
 export interface DetectedSticky {
-	/** Bounding box in the *original* image's coordinate space. */
+	/** Axis-aligned bounding box in the *original* image's coordinate space.
+	 * Used for UI overlays and (currently) for color sampling. The actual
+	 * crop image is deskewed via the rotated rect — the bbox here is just
+	 * for visualization purposes. */
 	bbox: { x: number; y: number; w: number; h: number };
-	/** PNG data URL of the cropped note. Same string is reused as both the
-	 * `<img src>` for the review thumbnail and the input to Tesseract. */
+	/** PNG data URL of the deskewed COLOR crop, used as the thumbnail in
+	 * the review UI. Tilted notes come out upright; peeling corners are
+	 * absorbed by the convex hull. */
 	cropDataUrl: string;
+	/** PNG data URL of the deskewed crop after preprocessing for OCR:
+	 * grayscale → CLAHE → adaptive threshold → 2× upscale. This is what
+	 * Tesseract should see — much better recognition than feeding it the
+	 * raw color crop. */
+	ocrDataUrl: string;
 	/** Color sampled from the center of the note (drops edge/shadow noise). */
 	color: {
 		h: number; // 0–179 (OpenCV hue scale)

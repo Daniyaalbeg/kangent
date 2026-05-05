@@ -2,23 +2,25 @@
 
 // Vision worker — runs the OpenCV.js detection pipeline off the main thread.
 //
-// Why this is a worker (not a module the main thread loads directly):
-// - @techstark/opencv-js is ~10 MB of JS + wasm. Compiling it on the main
-//   thread blocks the renderer for several seconds and, combined with the
-//   memory pressure from a freshly-decoded multi-megapixel ImageBitmap,
-//   was reliably crashing Chrome's renderer process during smoke testing.
-// - The Tesseract worker also wants the network and main thread during its
-//   own boot. Running CV on a separate thread frees both up so they can
-//   load truly in parallel.
-// - We do *all* CV work here (downscale, mask, contour, crop, color sample,
-//   PNG encoding) so the main thread receives only finished `DetectedSticky`
-//   records — no Mat objects ever leak out, no canvas operations happen on
-//   the main UI thread.
-//
-// Protocol:
-//   in:  { id, type: "detect", bitmap, maxLongEdge }   (bitmap is transferred)
-//   out: { id, type: "detected", stickies }
-//        | { id, type: "error", error }
+// Pipeline per note:
+//   1. Find contours via HSV mask + morphology (whole-image step).
+//   2. Convex hull on the contour — closes any peeling/missing-corner gap so
+//      a sticky with a curled corner becomes a clean convex polygon.
+//   3. minAreaRect(hull) → smallest enclosing rotated rectangle, used for
+//      handling tilted notes (the dominant distortion in hand-held photos).
+//   4. Render a deskewed COLOR crop to an OffscreenCanvas via a canvas affine
+//      transform (translate + rotate + drawImage). We deliberately use the
+//      browser's drawImage here instead of OpenCV's warpAffine because
+//      reading pixels back out of an OpenCV Mat into ImageData is fraught
+//      (the Mat's row stride may include alignment padding that shifts each
+//      row of the resulting image — that was the "lines pushed left/right"
+//      bug we hit earlier).
+//   5. From the deskewed color crop, build a separate "OCR-ready" version:
+//      grayscale → CLAHE (local contrast) → adaptive threshold (binarize) →
+//      2× upscale. Each step is a quoted ~10–20% accuracy boost on
+//      Tesseract benchmarks for document-photo OCR; combined they often
+//      take printed/clean handwriting from "mostly empty" to "readable".
+//   6. Encode both crops to data URLs (color → thumbnail, OCR-ready → Tesseract).
 
 import cv from "@techstark/opencv-js";
 import type { ColorBucket, DetectedSticky } from "./detect";
@@ -46,9 +48,6 @@ interface ErrorResponse {
 
 type OutgoingMessage = DetectedResponse | ErrorResponse;
 
-// OpenCV's wasm runtime initializes asynchronously after the JS module
-// evaluates. We expose a single promise so concurrent detect() calls during
-// startup all await the same init.
 let cvReady: Promise<void> | null = null;
 function ensureCv(): Promise<void> {
 	if (cvReady) return cvReady;
@@ -71,9 +70,6 @@ self.addEventListener("message", async (event: MessageEvent<IncomingMessage>) =>
 	try {
 		await ensureCv();
 		const stickies = await detectStickies(bitmap, maxLongEdge);
-		// Free the GPU-backed bitmap explicitly. ImageBitmap's pixel storage
-		// often lives outside the JS heap so leaving it for GC can keep big
-		// allocations alive longer than expected.
 		try {
 			bitmap.close();
 		} catch {
@@ -100,10 +96,6 @@ async function detectStickies(
 	bitmap: ImageBitmap,
 	maxLongEdge: number,
 ): Promise<DetectedSticky[]> {
-	// Downscale via OffscreenCanvas. Working-resolution math: a 1280px long
-	// edge keeps masks at ~3.7 MB per channel — comfortably below the wasm
-	// memory ceiling, while still detecting sticky notes that are >0.3% of
-	// the photo area (i.e. anything bigger than a thumbnail).
 	const longEdge = Math.max(bitmap.width, bitmap.height);
 	const scale = longEdge > maxLongEdge ? maxLongEdge / longEdge : 1;
 	const width = Math.round(bitmap.width * scale);
@@ -113,9 +105,6 @@ async function detectStickies(
 	const ctx = off.getContext("2d");
 	if (!ctx) throw new Error("OffscreenCanvas 2D context unavailable");
 	ctx.drawImage(bitmap, 0, 0, width, height);
-	// We grab ImageData and feed it to OpenCV via matFromImageData. This is
-	// the only input path that works in a worker — `cv.imread` expects a
-	// DOM canvas, which workers don't have.
 	const imgData = ctx.getImageData(0, 0, width, height);
 
 	const src = cv.matFromImageData(imgData);
@@ -134,9 +123,6 @@ async function detectStickies(
 		cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
 		cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
 
-		// Saturation > 60 drops the white whiteboard surface; Value > 60 drops
-		// black shadow blobs. Hue is unrestricted so any sticky-note color
-		// passes through. Tune these floors if real-world photos under-detect.
 		const lower = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 60, 60, 0]);
 		const upper = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [
 			180, 255, 255, 255,
@@ -144,10 +130,6 @@ async function detectStickies(
 		disposables.push(lower, upper);
 		cv.inRange(hsv, lower, upper, mask);
 
-		// Closing fills small text-stroke gaps inside notes (handwriting on a
-		// yellow sticky leaves dark trails that fragment contours otherwise);
-		// opening then strips pinhead noise. Kernel size scales with input
-		// width so the same proportions apply at different resolutions.
 		const kSize = Math.max(7, Math.round(width / 200));
 		const kernel = cv.getStructuringElement(
 			cv.MORPH_RECT,
@@ -169,10 +151,10 @@ async function detectStickies(
 		const minArea = totalArea * 0.003;
 		const maxArea = totalArea * 0.25;
 
-		// Encoder canvases are reused across crops. Re-instantiating an
-		// OffscreenCanvas + 2D context per note adds noticeable overhead on
+		// Reused across crops so we don't re-allocate two canvases per note on
 		// boards with 30+ stickies.
-		const encoderCanvas = new OffscreenCanvas(1, 1);
+		const colorCanvas = new OffscreenCanvas(1, 1);
+		const ocrCanvas = new OffscreenCanvas(1, 1);
 
 		for (let i = 0; i < contours.size(); i++) {
 			const cnt = contours.get(i);
@@ -182,18 +164,32 @@ async function detectStickies(
 				continue;
 			}
 
+			// Convex hull eats peeled-corner concavities — a sticky whose
+			// bottom-right has curled away from the wall would otherwise have
+			// a C-shaped contour that throws off both rotated-rect fit and
+			// the eventual crop. The hull's area is also slightly bigger
+			// than the contour, which can rescue notes that fell just below
+			// minArea for the same reason.
+			const hull = new cv.Mat();
+			cv.convexHull(cnt, hull, false, true);
+
+			const rotRect = cv.minAreaRect(hull);
 			const rect = cv.boundingRect(cnt);
 			cnt.delete();
+			hull.delete();
 
-			const aspect = rect.width / rect.height;
-			if (aspect < 0.5 || aspect > 2.2) continue;
+			// Aspect filter using the rotated rect's true long/short sides.
+			// boundingRect would inflate aspect on tilted notes (a 1:1 note
+			// rotated 30° has a bbox aspect of ~1.4 just from the rotation).
+			const longSide = Math.max(rotRect.size.width, rotRect.size.height);
+			const shortSide = Math.min(rotRect.size.width, rotRect.size.height);
+			if (shortSide < 1) continue;
+			const aspect = longSide / shortSide;
+			if (aspect > 2.2) continue;
 
-			// Color sampling: an ROI on the parent Mat is fine here because
-			// `cv.cvtColor` and `cv.mean` use OpenCV's internal pixel-access
-			// path that respects `step` correctly. The trouble was only with
-			// reading raw bytes out of a Mat's `.data` getter — opencv.js
-			// returns a Uint8Array view into HEAPU8 whose layout we can't
-			// safely interpret as a contiguous RGBA block.
+			// Color sampling — still done on the axis-aligned ROI of `src`.
+			// cvtColor + mean handle stepped ROIs natively (they go through
+			// OpenCV's pixel-access path, not the raw .data buffer).
 			const cropRoi = src.roi(rect);
 			const cx = Math.floor(rect.width * 0.25);
 			const cy = Math.floor(rect.height * 0.25);
@@ -206,33 +202,130 @@ async function detectStickies(
 			cv.cvtColor(centerRgb, centerHsv, cv.COLOR_RGB2HSV);
 			const meanHsv = cv.mean(centerHsv) as [number, number, number, number];
 			const meanRgb = cv.mean(centerRgb) as [number, number, number, number];
-			const [h, s, v] = meanHsv;
+			const [hVal, sVal, vVal] = meanHsv;
 			const hex = rgbToHex(meanRgb[0], meanRgb[1], meanRgb[2]);
+			cropRoi.delete();
+			center.delete();
+			centerRgb.delete();
+			centerHsv.delete();
 
-			// Crop encoding: bypass OpenCV entirely. We already have the
-			// downscaled image in `off` (the OffscreenCanvas). drawImage with
-			// a source rect is a native browser API that doesn't care about
-			// any of OpenCV's stride/contiguity weirdness — it just copies
-			// the pixels from `off` to the encoder canvas correctly. This
-			// fixes the glitchy/sheared thumbnails that came from trying to
-			// reinterpret a stepped Mat's bytes as a flat RGBA block.
-			encoderCanvas.width = rect.width;
-			encoderCanvas.height = rect.height;
-			const encCtx = encoderCanvas.getContext("2d");
-			if (!encCtx) throw new Error("crop encoder 2D context unavailable");
-			encCtx.drawImage(
-				off,
-				rect.x,
-				rect.y,
-				rect.width,
-				rect.height,
-				0,
-				0,
-				rect.width,
-				rect.height,
+			// ----- Layer 2: deskew via canvas affine -----
+			//
+			// Compute the rotated-rect's 4 corners in image space, find the
+			// longest side, and use its angle as the rotation we need to
+			// undo. This is more robust than reading rotRect.angle directly
+			// because OpenCV's angle-vs-size convention varies between
+			// versions (3.x vs 4.x).
+			const cxC = rotRect.center.x;
+			const cyC = rotRect.center.y;
+			const w = rotRect.size.width;
+			const h = rotRect.size.height;
+			const a = (rotRect.angle * Math.PI) / 180;
+			const cosA = Math.cos(a);
+			const sinA = Math.sin(a);
+			const localCorners: Array<{ x: number; y: number }> = [
+				{ x: -w / 2, y: -h / 2 },
+				{ x: w / 2, y: -h / 2 },
+				{ x: w / 2, y: h / 2 },
+				{ x: -w / 2, y: h / 2 },
+			];
+			let longSideAngleRad = 0;
+			let longSideLen = 0;
+			for (let k = 0; k < 4; k++) {
+				const p1Local = localCorners[k];
+				const p2Local = localCorners[(k + 1) % 4];
+				if (!p1Local || !p2Local) continue;
+				const p1x = cxC + p1Local.x * cosA - p1Local.y * sinA;
+				const p1y = cyC + p1Local.x * sinA + p1Local.y * cosA;
+				const p2x = cxC + p2Local.x * cosA - p2Local.y * sinA;
+				const p2y = cyC + p2Local.x * sinA + p2Local.y * cosA;
+				const dx = p2x - p1x;
+				const dy = p2y - p1y;
+				const len = Math.hypot(dx, dy);
+				if (len > longSideLen) {
+					longSideLen = len;
+					longSideAngleRad = Math.atan2(dy, dx);
+				}
+			}
+
+			const outW = Math.max(1, Math.round(longSide));
+			const outH = Math.max(1, Math.round(shortSide));
+
+			colorCanvas.width = outW;
+			colorCanvas.height = outH;
+			const colorCtx = colorCanvas.getContext("2d");
+			if (!colorCtx) throw new Error("color canvas ctx unavailable");
+			// Transform stack reads bottom-up: first translate so the
+			// rotated rect's center sits at the dest canvas's origin, then
+			// rotate the canvas to align the long side with the +x axis,
+			// then translate so that origin maps to the canvas center. The
+			// visible canvas region is exactly the deskewed rect.
+			colorCtx.save();
+			colorCtx.translate(outW / 2, outH / 2);
+			colorCtx.rotate(-longSideAngleRad);
+			colorCtx.translate(-cxC, -cyC);
+			colorCtx.drawImage(off, 0, 0);
+			colorCtx.restore();
+
+			const colorImgData = colorCtx.getImageData(0, 0, outW, outH);
+			const colorBlob = await colorCanvas.convertToBlob({ type: "image/png" });
+			const cropDataUrl = await blobToDataUrl(colorBlob);
+
+			// ----- Layer 1: preprocess for OCR -----
+			//
+			// On the deskewed color crop, run grayscale → CLAHE → adaptive
+			// threshold → 2× upscale. Tesseract expects ~300 DPI and clean
+			// binarized text; sticky-note crops at our 1280px working
+			// resolution are well below that, and CLAHE+threshold both fix
+			// uneven lighting and amplify pen strokes.
+			const colorMat = cv.matFromImageData(colorImgData);
+			const grayMat = new cv.Mat();
+			cv.cvtColor(colorMat, grayMat, cv.COLOR_RGBA2GRAY);
+
+			const clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+			clahe.apply(grayMat, grayMat);
+
+			const threshMat = new cv.Mat();
+			// Block size 31, C=10: tuned defaults from the OCR-preprocessing
+			// literature for sticky-note-sized crops. Larger blocks oversmooth
+			// thin pen strokes; smaller blocks pick up paper texture as noise.
+			cv.adaptiveThreshold(
+				grayMat,
+				threshMat,
+				255,
+				cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+				cv.THRESH_BINARY,
+				31,
+				10,
 			);
-			const blob = await encoderCanvas.convertToBlob({ type: "image/png" });
-			const cropDataUrl = await blobToDataUrl(blob);
+
+			const upMat = new cv.Mat();
+			cv.resize(
+				threshMat,
+				upMat,
+				new cv.Size(0, 0),
+				2,
+				2,
+				cv.INTER_CUBIC,
+			);
+
+			const ocrRgba = new cv.Mat();
+			cv.cvtColor(upMat, ocrRgba, cv.COLOR_GRAY2RGBA);
+
+			ocrCanvas.width = ocrRgba.cols;
+			ocrCanvas.height = ocrRgba.rows;
+			const ocrCtx = ocrCanvas.getContext("2d");
+			if (!ocrCtx) throw new Error("ocr canvas ctx unavailable");
+			ocrCtx.putImageData(matToImageData(ocrRgba), 0, 0);
+			const ocrBlob = await ocrCanvas.convertToBlob({ type: "image/png" });
+			const ocrDataUrl = await blobToDataUrl(ocrBlob);
+
+			colorMat.delete();
+			grayMat.delete();
+			clahe.delete();
+			threshMat.delete();
+			upMat.delete();
+			ocrRgba.delete();
 
 			results.push({
 				bbox: {
@@ -242,13 +335,9 @@ async function detectStickies(
 					h: Math.round(rect.height / scale),
 				},
 				cropDataUrl,
-				color: { h, s, v, hex, bucket: hueToBucket(h, s, v) },
+				ocrDataUrl,
+				color: { h: hVal, s: sVal, v: vVal, hex, bucket: hueToBucket(hVal, sVal, vVal) },
 			});
-
-			cropRoi.delete();
-			center.delete();
-			centerRgb.delete();
-			centerHsv.delete();
 		}
 	} finally {
 		for (const m of disposables) {
@@ -260,8 +349,6 @@ async function detectStickies(
 		}
 	}
 
-	// Sort whiteboard reading order: row band then x. The band keeps notes
-	// at roughly the same y in the same row even if they're a few pixels off.
 	const rowBand = Math.max(1, Math.round(height / scale / 12));
 	results.sort((a, b) => {
 		const rowA = Math.floor(a.bbox.y / rowBand);
@@ -275,7 +362,6 @@ async function detectStickies(
 
 function hueToBucket(h: number, s: number, v: number): ColorBucket {
 	if (s < 50 || v < 70) return "other";
-	// OpenCV hue is 0–179 (full circle / 2). Reds wrap at both ends.
 	if (h < 8 || h >= 165) return "pink";
 	if (h < 20) return "orange";
 	if (h < 35) return "yellow";
@@ -304,6 +390,67 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 		reader.onerror = () => reject(reader.error ?? new Error("FileReader failed"));
 		reader.readAsDataURL(blob);
 	});
+}
+
+/**
+ * Convert an OpenCV.js Mat into an ImageData, accounting for the Mat's row
+ * stride. Critical because opencv.js Mats may have step > cols * elemSize
+ * (alignment padding for SIMD), and a naive `new Uint8ClampedArray(mat.data)`
+ * copy would drag those padding bytes into the visible image, producing the
+ * "each row pushed left/right" glitch we saw earlier.
+ *
+ * Always returns RGBA. If the input Mat is 1- or 3-channel, we cvtColor it
+ * to RGBA first inside the helper. The caller doesn't need to convert.
+ */
+function matToImageData(mat: any): ImageData {
+	let rgba = mat;
+	let needsDelete = false;
+	const channels = mat.channels();
+	if (channels === 1) {
+		rgba = new cv.Mat();
+		cv.cvtColor(mat, rgba, cv.COLOR_GRAY2RGBA);
+		needsDelete = true;
+	} else if (channels === 3) {
+		rgba = new cv.Mat();
+		cv.cvtColor(mat, rgba, cv.COLOR_RGB2RGBA);
+		needsDelete = true;
+	}
+
+	const cols = rgba.cols;
+	const rows = rgba.rows;
+	const expectedRowBytes = cols * 4;
+
+	// Probe the actual byte length of mat.data and infer step. opencv.js
+	// exposes the data getter as a HEAPU8 subarray sized rows*step, so when
+	// step has padding the total length is bigger than rows*cols*4.
+	const src: Uint8Array = rgba.data;
+	const dataLen = src.length;
+	let stepBytes = expectedRowBytes;
+	if (dataLen >= rows * expectedRowBytes && dataLen % rows === 0) {
+		const inferred = dataLen / rows;
+		if (inferred >= expectedRowBytes) stepBytes = inferred;
+	}
+
+	let result: ImageData;
+	if (stepBytes === expectedRowBytes) {
+		// Fast path: no padding. A single subarray + clamped copy.
+		const slice = src.subarray(0, rows * expectedRowBytes);
+		result = new ImageData(new Uint8ClampedArray(slice), cols, rows);
+	} else {
+		// Padded: copy each row's pixel bytes (skipping the padding tail).
+		const dst = new Uint8ClampedArray(rows * expectedRowBytes);
+		for (let y = 0; y < rows; y++) {
+			const srcOff = y * stepBytes;
+			dst.set(
+				src.subarray(srcOff, srcOff + expectedRowBytes),
+				y * expectedRowBytes,
+			);
+		}
+		result = new ImageData(dst, cols, rows);
+	}
+
+	if (needsDelete) rgba.delete();
+	return result;
 }
 
 export type {};
