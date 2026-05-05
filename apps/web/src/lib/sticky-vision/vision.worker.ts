@@ -211,58 +211,68 @@ async function detectStickies(
 
 			// ----- Layer 2: deskew via canvas affine -----
 			//
-			// Compute the rotated-rect's 4 corners in image space, find the
-			// longest side, and use its angle as the rotation we need to
-			// undo. This is more robust than reading rotRect.angle directly
-			// because OpenCV's angle-vs-size convention varies between
-			// versions (3.x vs 4.x).
+			// Pick whichever of the rotated rect's two perpendicular axes
+			// requires the SMALLEST rotation to snap to image-axis-aligned,
+			// and use that as our rotation amount. This preserves each
+			// sticky's natural orientation (portrait vs landscape) instead
+			// of always forcing the long side horizontal — which would
+			// 90°-flip portrait notes and present their text sideways to
+			// OCR. For nearly-square notes it also stops minAreaRect's
+			// width/height labeling from randomly flipping us between runs
+			// based on contour noise.
+			//
+			// Caveat: we assume the photo is taken roughly upright (sticky
+			// tilted by ≤ ~45°). A sticky at 60°+ in the image gets the
+			// same "smallest rotation" applied, which would still leave it
+			// sideways. Tesseract's PSM_AUTO_OSD could detect 90°/180°
+			// orientations but that's heavier and not needed for typical
+			// hand-held whiteboard photos.
 			const cxC = rotRect.center.x;
 			const cyC = rotRect.center.y;
-			const w = rotRect.size.width;
-			const h = rotRect.size.height;
 			const a = (rotRect.angle * Math.PI) / 180;
-			const cosA = Math.cos(a);
-			const sinA = Math.sin(a);
-			const localCorners: Array<{ x: number; y: number }> = [
-				{ x: -w / 2, y: -h / 2 },
-				{ x: w / 2, y: -h / 2 },
-				{ x: w / 2, y: h / 2 },
-				{ x: -w / 2, y: h / 2 },
-			];
-			let longSideAngleRad = 0;
-			let longSideLen = 0;
-			for (let k = 0; k < 4; k++) {
-				const p1Local = localCorners[k];
-				const p2Local = localCorners[(k + 1) % 4];
-				if (!p1Local || !p2Local) continue;
-				const p1x = cxC + p1Local.x * cosA - p1Local.y * sinA;
-				const p1y = cyC + p1Local.x * sinA + p1Local.y * cosA;
-				const p2x = cxC + p2Local.x * cosA - p2Local.y * sinA;
-				const p2y = cyC + p2Local.x * sinA + p2Local.y * cosA;
-				const dx = p2x - p1x;
-				const dy = p2y - p1y;
-				const len = Math.hypot(dx, dy);
-				if (len > longSideLen) {
-					longSideLen = len;
-					longSideAngleRad = Math.atan2(dy, dx);
-				}
-			}
 
-			const outW = Math.max(1, Math.round(longSide));
-			const outH = Math.max(1, Math.round(shortSide));
+			// Two perpendicular axis orientations in image space. The
+			// rect's "width" axis points at angle `a`; its "height" axis
+			// is +90° from that.
+			const widthAxisAngle = a;
+			const heightAxisAngle = a + Math.PI / 2;
+
+			// Normalize to (-π/2, π/2] — line orientations differing by π
+			// describe the same line, so we keep the representative with
+			// the smaller magnitude.
+			const normWidth = normalizeLineAngle(widthAxisAngle);
+			const normHeight = normalizeLineAngle(heightAxisAngle);
+
+			let chosenAngleRad: number;
+			let outW: number;
+			let outH: number;
+			if (Math.abs(normWidth) <= Math.abs(normHeight)) {
+				// Snap the rect's width-axis horizontal. Output dimensions
+				// match the rect's natural (width, height) labeling.
+				chosenAngleRad = normWidth;
+				outW = Math.max(1, Math.round(rotRect.size.width));
+				outH = Math.max(1, Math.round(rotRect.size.height));
+			} else {
+				// Snap the rect's height-axis horizontal. The output's
+				// horizontal axis now corresponds to what OpenCV called
+				// the rect's "height".
+				chosenAngleRad = normHeight;
+				outW = Math.max(1, Math.round(rotRect.size.height));
+				outH = Math.max(1, Math.round(rotRect.size.width));
+			}
 
 			colorCanvas.width = outW;
 			colorCanvas.height = outH;
 			const colorCtx = colorCanvas.getContext("2d");
 			if (!colorCtx) throw new Error("color canvas ctx unavailable");
-			// Transform stack reads bottom-up: first translate so the
-			// rotated rect's center sits at the dest canvas's origin, then
-			// rotate the canvas to align the long side with the +x axis,
-			// then translate so that origin maps to the canvas center. The
-			// visible canvas region is exactly the deskewed rect.
+			// Transform stack reads bottom-up: translate so the rotated
+			// rect's center sits at the canvas's origin, rotate by minus
+			// the chosen tilt to undo it, then translate so that origin
+			// maps to the dest canvas's center. The visible canvas region
+			// is exactly the (small) deskew of the original rect.
 			colorCtx.save();
 			colorCtx.translate(outW / 2, outH / 2);
-			colorCtx.rotate(-longSideAngleRad);
+			colorCtx.rotate(-chosenAngleRad);
 			colorCtx.translate(-cxC, -cyC);
 			colorCtx.drawImage(off, 0, 0);
 			colorCtx.restore();
@@ -377,6 +387,21 @@ function rgbToHex(r: number, g: number, b: number): string {
 			.toString(16)
 			.padStart(2, "0");
 	return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+/**
+ * Normalize a line orientation to (-π/2, π/2]. Two angles differing by π
+ * describe the same line; this returns the representative with the
+ * smallest absolute value. Used to pick which of a rotated rect's two
+ * perpendicular axes is closest to image-axis-aligned, so we can rotate
+ * by the minimum amount needed to deskew (instead of always forcing the
+ * long side horizontal).
+ */
+function normalizeLineAngle(a: number): number {
+	let n = a % Math.PI;
+	if (n > Math.PI / 2) n -= Math.PI;
+	else if (n <= -Math.PI / 2) n += Math.PI;
+	return n;
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
