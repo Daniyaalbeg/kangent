@@ -2,17 +2,20 @@
 //
 // Pipeline:
 //   1) user picks a photo (file picker; on mobile this triggers camera).
-//   2) we lazy-load OpenCV.js, downscale + run sticky-note detection.
-//   3) we lazy-load Tesseract.js and OCR each crop sequentially. Each note's
-//      title field starts as "..." and resolves as OCR completes — the user
-//      can already start editing earlier notes while later ones are reading.
+//   2) the vision Web Worker decodes + runs the OpenCV.js detection pipeline.
+//      Lives off the main thread so the page doesn't freeze (and doesn't
+//      OOM) while the ~10 MB wasm module compiles and processes a multi-
+//      megapixel image.
+//   3) Tesseract.js (already worker-based internally) OCRs each crop
+//      sequentially. Each note's title field starts blank and resolves as
+//      OCR completes — the user can edit earlier notes while later ones
+//      are still being read.
 //   4) user edits / re-buckets / removes rows, hits "Import" → fans out
 //      addCard calls with a small concurrency limit so the DO isn't slammed.
 //
-// Loading strategy: the heavy deps (`@techstark/opencv-js` ~7 MB, the
-// Tesseract worker + `eng.traineddata` ~12 MB combined) are dynamic-imported
-// inside the lazy modules — they only land in the bundle for users who open
-// this dialog.
+// Both heavy deps are spawned eagerly (in parallel) the moment a file is
+// picked, so by the time the bitmap finishes decoding the workers are
+// usually already booting their wasm.
 
 import { useEffect, useId, useRef, useState } from "react";
 import {
@@ -22,9 +25,9 @@ import {
 import {
 	type DetectedSticky,
 	detectStickies,
-	drawBitmapToCanvas,
-	ensureOpenCv,
+	ensureVisionWorker,
 	fileToBitmap,
+	terminateVisionWorker,
 } from "~/lib/sticky-vision/detect";
 import {
 	type OcrProgress,
@@ -89,10 +92,15 @@ export function ImportFromPhoto({
 	const runIdRef = useRef(0);
 
 	useEffect(() => {
-		// On unmount: tear down the OCR worker and free its wasm/model memory.
-		// Not strictly required (browser will GC eventually) but ~30 MB is
-		// worth releasing when the dialog closes.
+		// Eager-spawn the vision worker as soon as the dialog mounts. Spawning
+		// it triggers OpenCV.js to start downloading + compiling its wasm in
+		// the worker thread, so by the time the user picks a file it's often
+		// already ready.
+		ensureVisionWorker();
+		// On unmount: tear down both workers so their wasm heaps (~10 MB CV +
+		// ~30 MB Tesseract+model) are freed instead of lingering.
 		return () => {
+			terminateVisionWorker();
 			void terminateOcrWorker();
 		};
 	}, []);
@@ -104,10 +112,11 @@ export function ImportFromPhoto({
 		setStage({ kind: "loading-cv", message: "Loading vision engine..." });
 
 		try {
-			// Kick off both heavy loads in parallel: OpenCV is needed before
-			// detection, but Tesseract can warm up alongside it so by the time
-			// detection finishes the OCR worker is already booted.
-			const cvPromise = ensureOpenCv();
+			// Kick off both heavy loads in parallel. The vision worker may
+			// already be warming up from the dialog mount; calling
+			// ensureVisionWorker again is a cheap no-op. Tesseract starts its
+			// own wasm worker when we first call ensureOcrWorker.
+			ensureVisionWorker();
 			const ocrPromise = ensureOcrWorker((p: OcrProgress) => {
 				if (myRun !== runIdRef.current) return;
 				setStage((current) =>
@@ -118,12 +127,16 @@ export function ImportFromPhoto({
 			});
 
 			const bitmap = await fileToBitmap(file);
-			await cvPromise;
-			if (myRun !== runIdRef.current) return;
+			if (myRun !== runIdRef.current) {
+				bitmap.close();
+				return;
+			}
 
 			setStage({ kind: "detecting" });
-			const { canvas, scale } = drawBitmapToCanvas(bitmap);
-			const stickies = await detectStickies(canvas, scale);
+			// detectStickies *transfers* the bitmap to the worker — after
+			// this call the local reference is detached. Don't bitmap.close()
+			// it ourselves.
+			const stickies = await detectStickies(bitmap);
 			if (myRun !== runIdRef.current) return;
 
 			if (stickies.length === 0) {
