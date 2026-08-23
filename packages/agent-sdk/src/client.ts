@@ -1,5 +1,5 @@
-import { HttpApiClient } from "@effect/platform"
 import { Effect } from "effect"
+import { HttpApiClient } from "effect/unstable/httpapi"
 import { KangentApi } from "@kangent/board-core"
 
 export const makeClient = (baseUrl: string) =>

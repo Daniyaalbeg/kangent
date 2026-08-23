@@ -10,7 +10,7 @@ export class BoardSnapshot extends Schema.Class<BoardSnapshot>("BoardSnapshot")(
 
 // Kinds of mutation that produce a change entry. The string literals double
 // as the "what happened" signal for agents consuming the feed.
-export const ChangeOp = Schema.Literal(
+export const ChangeOp = Schema.Literals([
 	"board:update",
 	"card:add",
 	"card:update",
@@ -20,13 +20,13 @@ export const ChangeOp = Schema.Literal(
 	"column:update",
 	"column:delete",
 	"column:reorder",
-);
+]);
 export type ChangeOp = typeof ChangeOp.Type;
 
 // Post-op snapshot of the affected entity. Null for deletes and reorders
 // (reorder uses `columnIds` instead). For `board:update` this carries the
 // full new Board so agents can update their cached metadata in one step.
-export const ChangeSnapshot = Schema.NullOr(Schema.Union(Board, Card, Column));
+export const ChangeSnapshot = Schema.NullOr(Schema.Union([Board, Card, Column]));
 
 export class Change extends Schema.Class<Change>("Change")({
 	version: Schema.Number,

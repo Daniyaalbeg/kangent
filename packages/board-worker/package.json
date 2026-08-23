@@ -16,10 +16,9 @@
     "dev": "tsc -b --watch"
   },
   "dependencies": {
-    "@effect/platform": "^0.96.0",
     "@kangent/board-core": "workspace:*",
     "agents": "^0.11.5",
-    "effect": "^3.21.1",
+    "effect": "4.0.0-beta.64",
     "nanoid": "^5.1.5",
     "posthog-node": "^5.33.0"
   },

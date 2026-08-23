@@ -19,7 +19,7 @@ const SKILL_RAW_URL = `https://raw.githubusercontent.com/${SKILL_REPO}/main/skil
 const SKILL_VIEW_URL = `https://github.com/${SKILL_REPO}/blob/main/skills/kangent/SKILL.md`;
 
 export default {
-	async fetch(request: Request, env: Env): Promise<Response> {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const url = new URL(request.url);
 		// Base URL derived from the request, so the .well-known discovery
 		// record returns the host the agent actually hit (localhost in dev,
@@ -28,7 +28,7 @@ export default {
 
 		// API routes → Durable Object
 		if (url.pathname.startsWith("/api/boards")) {
-			return handleApiRequest(request, env, url);
+			return handleApiRequest(request, env, url, ctx);
 		}
 
 		const agentResponse = await routeAgentRequest(request, env);
@@ -59,10 +59,15 @@ export default {
 	},
 } satisfies ExportedHandler<Env>;
 
-async function handleApiRequest(request: Request, env: Env, url: URL): Promise<Response> {
+async function handleApiRequest(
+	request: Request,
+	env: Env,
+	url: URL,
+	ctx: ExecutionContext,
+): Promise<Response> {
 	// POST /api/boards → create a new board (needs its own DO)
 	if (url.pathname === "/api/boards" && request.method === "POST") {
-		return handleCreateBoard(request, env);
+		return handleCreateBoard(request, env, ctx);
 	}
 
 	// Extract boardId from path: /api/boards/:boardId/...
@@ -81,7 +86,11 @@ async function handleApiRequest(request: Request, env: Env, url: URL): Promise<R
 	return stub.fetch(request);
 }
 
-async function handleCreateBoard(request: Request, env: Env): Promise<Response> {
+async function handleCreateBoard(
+	request: Request,
+	env: Env,
+	ctx: ExecutionContext,
+): Promise<Response> {
 	let body: { title?: string; description?: string; columns?: string[]; by?: string };
 	try {
 		body = await request.json();
@@ -109,6 +118,10 @@ async function handleCreateBoard(request: Request, env: Env): Promise<Response> 
 		by: body.by ?? "human:anonymous",
 	});
 
+	// Defer the PostHog flush past the response — capturing on the request
+	// hot path added a full HTTP round-trip to every board create. ctx.waitUntil
+	// keeps the Worker alive long enough for the flush to complete after the
+	// response is returned.
 	if (env.POSTHOG_API_KEY) {
 		const posthog = new PostHog(env.POSTHOG_API_KEY, {
 			host: env.POSTHOG_HOST,
@@ -117,17 +130,21 @@ async function handleCreateBoard(request: Request, env: Env): Promise<Response> 
 			enableExceptionAutocapture: true,
 		});
 		const distinctId = body.by ?? "human:anonymous";
-		await posthog.captureImmediate({
-			distinctId,
-			event: "board created",
-			properties: {
-				board_id: boardId,
-				board_title: body.title,
-				columns_count: body.columns?.length,
-				actor_type: distinctId.split(":")[0],
-			},
-		});
-		await posthog.shutdown();
+		ctx.waitUntil(
+			posthog
+				.captureImmediate({
+					distinctId,
+					event: "board created",
+					properties: {
+						board_id: boardId,
+						board_title: body.title,
+						columns_count: board.columns.length,
+						actor_type: distinctId.split(":")[0],
+					},
+				})
+				.then(() => posthog.shutdown())
+				.catch(() => {}),
+		);
 	}
 
 	return new Response(

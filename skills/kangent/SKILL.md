@@ -137,7 +137,7 @@ Content-Type: application/json
 
 {
   "title": "Sprint 12 Tasks",
-  "columns": ["To Do", "In Progress", "Done"],
+  "columns": ["Todo", "In Progress", "Done"],
   "by": "ai:claude"
 }
 ```
@@ -183,6 +183,29 @@ Rules:
 GET https://kangent-kangent-web-daniyaalbeg.danyaalbeg.workers.dev/api/boards/<boardId>/state
 ```
 
+Response (200):
+
+```json
+{
+  "board": {
+    "id": "abc123xyz789",
+    "title": "Sprint 12 Tasks",
+    "columns": [{ "id": "col_1", "title": "Todo", "cardIds": ["c_ab12"], "...": "..." }],
+    "nextCardSeq": 8,
+    "version": 27,
+    "...": "..."
+  },
+  "cards": [
+    { "id": "c_ab12", "identifier": "abc123xyz789-1", "columnId": "col_1", "title": "...", "...": "..." }
+  ],
+  "presence": [
+    { "id": "ai:claude", "status": "working", "message": "Adding tasks" }
+  ]
+}
+```
+
+`cards` is a sibling of `board` (not nested under it). Each `Column.cardIds` references the cards by their opaque `id`; cross-reference into the `cards` array to materialise the column's contents.
+
 Only call this when `/changes` told you `isFirstSync: true` and you want a second opinion, or when debugging. For normal operation, `/changes` is strictly better.
 
 ## Write Operations
@@ -192,14 +215,31 @@ All writes include `by: "ai:<your-name>"` for provenance. The board's `version` 
 ### Add a card
 ```
 POST https://kangent-kangent-web-daniyaalbeg.danyaalbeg.workers.dev/api/boards/<boardId>/cards
-{ "columnId": "col_1", "title": "Implement search", "description": "...", "by": "ai:claude" }
+{
+  "columnId": "col_1",
+  "title": "Implement search",
+  "description": "...",
+  "priority": "high",
+  "dueDate": "2026-05-20",
+  "labels": ["backend", "search"],
+  "blockedBy": ["<boardId>-3"],
+  "by": "ai:claude"
+}
 ```
+
+`labels` and `blockedBy` are optional lists. The server rejects empty strings and duplicates within the list and preserves case. `blockedBy` entries are card **identifiers** (see "Card identifier" below), not internal `id`s — easier to read in logs and stable across deletes/recreates.
 
 ### Update a card
 ```
 PATCH https://kangent-kangent-web-daniyaalbeg.danyaalbeg.workers.dev/api/boards/<boardId>/cards/<cardId>
-{ "title": "Updated title", "by": "ai:claude" }
+{ "title": "Updated title", "labels": ["backend"], "by": "ai:claude" }
 ```
+
+`labels` and `blockedBy` use **full-replace** semantics: omit them to leave the existing list alone, pass `[]` to clear, pass a list to overwrite.
+
+### Card identifier
+
+Every card has both an opaque `id` (used in URL paths) and a human-readable `identifier` of the form `<boardId>-<seq>` (e.g. `f3a2b1c4d5e6-1`). The identifier is server-stamped on creation, never reused, and survives deletes — quote it in logs and `blockedBy` lists. Cards created before identifiers existed are backfilled lazily on first access.
 
 ### Move a card
 ```

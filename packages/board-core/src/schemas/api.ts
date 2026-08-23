@@ -24,6 +24,10 @@ export class AddCardPayload extends Schema.Class<AddCardPayload>("AddCardPayload
 	priority: Schema.optional(CardPriority),
 	// ISO-8601 date or date-time string.
 	dueDate: Schema.optional(Schema.String),
+	// Optional on creation. Server rejects duplicates and preserves order.
+	labels: Schema.optional(Schema.Array(Schema.String)),
+	// Optional on creation. Each entry is a card identifier (e.g. `<boardId>-7`).
+	blockedBy: Schema.optional(Schema.Array(Schema.String)),
 	by: ActorId,
 }) {}
 
@@ -33,6 +37,11 @@ export class UpdateCardPayload extends Schema.Class<UpdateCardPayload>("UpdateCa
 	// Pass `null` to explicitly clear; omit to leave unchanged.
 	priority: Schema.optional(Schema.NullOr(CardPriority)),
 	dueDate: Schema.optional(Schema.NullOr(Schema.String)),
+	// Full-replace semantics: omit to leave unchanged, pass `[]` to clear,
+	// pass a list to overwrite.
+	labels: Schema.optional(Schema.Array(Schema.String)),
+	// Full-replace semantics. Pass `[]` to unblock.
+	blockedBy: Schema.optional(Schema.Array(Schema.String)),
 	by: ActorId,
 }) {}
 
@@ -66,7 +75,7 @@ export class UpdatePresencePayload extends Schema.Class<UpdatePresencePayload>(
 	"UpdatePresencePayload",
 )({
 	by: ActorId,
-	status: Schema.Literal("viewing", "working", "idle"),
+	status: Schema.Literals(["viewing", "working", "idle"]),
 	message: Schema.optional(Schema.String),
 }) {}
 
@@ -80,10 +89,11 @@ export class CreateBoardResponse extends Schema.Class<CreateBoardResponse>("Crea
 
 export class BoardStateResponse extends Schema.Class<BoardStateResponse>("BoardStateResponse")({
 	board: Board,
+	cards: Schema.Array(Card),
 	presence: Schema.Array(
 		Schema.Struct({
 			id: ActorId,
-			status: Schema.Literal("viewing", "working", "idle"),
+			status: Schema.Literals(["viewing", "working", "idle"]),
 			message: Schema.optional(Schema.String),
 		}),
 	),

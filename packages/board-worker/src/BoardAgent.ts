@@ -68,6 +68,29 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 		});
 	}
 
+	// Fire-and-forget event capture. PostHog should never sit on the request's
+	// critical path — flushing it added a full HTTP round-trip to every board
+	// write. The DO stays alive while the dangling promise is pending so the
+	// capture still completes; errors are swallowed so PostHog being down
+	// can't fail a board mutation.
+	private capture(distinctId: string, event: string, properties: Record<string, unknown>): void {
+		const posthog = this.makePostHog();
+		if (!posthog) return;
+		void posthog
+			.captureImmediate({ distinctId, event, properties })
+			.then(() => posthog.shutdown())
+			.catch(() => {});
+	}
+
+	private captureException(error: Error): void {
+		const posthog = this.makePostHog();
+		if (!posthog) return;
+		void posthog
+			.captureExceptionImmediate(error, "server")
+			.then(() => posthog.shutdown())
+			.catch(() => {});
+	}
+
 	async initializeBoard(params: CreateBoardParams) {
 		if (this.state.board) {
 			return this.state.board;
@@ -89,6 +112,10 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			title: params.title,
 			description: params.description,
 			columns,
+			// Per-board monotonic sequence used to mint card identifiers.
+			// Starts at 1 so the first card on this board becomes
+			// `<boardId>-1`.
+			nextCardSeq: 1,
 			createdAt: now,
 			updatedAt: now,
 			createdBy: params.by as Board["createdBy"],
@@ -131,23 +158,16 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			}
 
 			if (tail === "/state" && request.method === "GET") {
-				const snapshot = this.requireSnapshot();
+				const snapshot = this.ensureMigrated();
 				const actorId = new URL(request.url).searchParams.get("actorId") ?? "human:anonymous";
-				const posthog = this.makePostHog();
-				if (posthog) {
-					await posthog.captureImmediate({
-						distinctId: actorId,
-						event: "board viewed",
-						properties: {
-							board_id: this.boardId,
-							board_title: snapshot.board.title,
-							actor_type: actorId.split(":")[0],
-						},
-					});
-					await posthog.shutdown();
-				}
+				this.capture(actorId, "board viewed", {
+					board_id: this.boardId,
+					board_title: snapshot.board.title,
+					actor_type: actorId.split(":")[0],
+				});
 				return this.json({
-					board: { ...snapshot.board, cards: snapshot.cards },
+					board: snapshot.board,
+					cards: snapshot.cards,
 					presence: this.prunePresence(this.state.presence),
 				});
 			}
@@ -178,6 +198,8 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 					description: body.description,
 					priority: body.priority,
 					dueDate: body.dueDate,
+					labels: body.labels,
+					blockedBy: body.blockedBy,
 					by: body.by ?? "ai:unknown",
 				});
 				return this.json({ card, version }, 201);
@@ -191,6 +213,8 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 					description?: unknown;
 					priority?: CardPriority | null;
 					dueDate?: string | null;
+					labels?: string[];
+					blockedBy?: string[];
 					by?: string;
 				};
 				const { card, version } = await this.updateCardInternal(cardId, {
@@ -198,6 +222,8 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 					description: body.description,
 					priority: body.priority,
 					dueDate: body.dueDate,
+					labels: body.labels,
+					blockedBy: body.blockedBy,
 					by: body.by ?? "ai:unknown",
 				});
 				return this.json({ card, version });
@@ -311,6 +337,8 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			description: updates.description,
 			priority: updates.priority,
 			dueDate: updates.dueDate,
+			labels: updates.labels,
+			blockedBy: updates.blockedBy,
 			by: updates.by ?? "human:anonymous",
 		});
 	}
@@ -413,7 +441,9 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 	}
 
 	private async handleChangesRequest(request: Request, url: URL) {
-		this.requireSnapshot();
+		// Migration is part of the read contract for `/changes` so agents
+		// always receive cards stamped with `identifier` in the snapshot.
+		this.ensureMigrated();
 		const agentId = request.headers.get("X-Agent-Id")?.trim();
 		if (!agentId) {
 			return this.json(
@@ -454,7 +484,7 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 	}
 
 	private async updateBoardInternal(params: BoardUpdates & { by: string }) {
-		const snapshot = this.requireSnapshot();
+		const snapshot = this.ensureMigrated();
 
 		// No-op: nothing to apply. Return current state without bumping version
 		// or appending a change — the caller would otherwise see an empty diff.
@@ -510,39 +540,38 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			by: params.by,
 		});
 
-		const posthog = this.makePostHog();
-		if (posthog) {
-			await posthog.captureImmediate({
-				distinctId: params.by,
-				event: "board updated",
-				properties: {
-					board_id: this.boardId,
-					board_title: board.title,
-					actor_type: params.by.split(":")[0],
-				},
-			});
-			await posthog.shutdown();
-		}
+		this.capture(params.by, "board updated", {
+			board_id: this.boardId,
+			board_title: board.title,
+			actor_type: params.by.split(":")[0],
+		});
 
 		return { board, version };
 	}
 
 	private async addCardInternal(params: AddCardParams) {
-		const snapshot = this.requireSnapshot();
+		const snapshot = this.ensureMigrated();
 		const column = snapshot.board.columns.find((entry) => entry.id === params.columnId);
 		if (!column) {
 			throw new ColumnNotFound({ columnId: params.columnId });
 		}
 
+		const labels = this.normalizeStringList(params.labels, "labels");
+		const blockedBy = this.normalizeStringList(params.blockedBy, "blockedBy");
+		const { identifier, nextCardSeq } = this.mintCardIdentifier(snapshot.board);
+
 		const now = new Date().toISOString();
 		const card = {
 			id: nanoid(8),
+			identifier,
 			columnId: params.columnId,
 			title: params.title,
 			description: params.description ?? null,
 			position: column.cardIds.length,
 			...(params.priority !== undefined ? { priority: params.priority } : {}),
 			...(params.dueDate !== undefined ? { dueDate: params.dueDate } : {}),
+			...(labels !== undefined ? { labels } : {}),
+			...(blockedBy !== undefined ? { blockedBy } : {}),
 			createdBy: params.by,
 			createdAt: now,
 			updatedAt: now,
@@ -553,7 +582,11 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 				: entry,
 		);
 		const version = snapshot.board.version + 1;
-		const board = this.withBoardMeta(snapshot.board, { columns: nextColumns, version });
+		const board = this.withBoardMeta(snapshot.board, {
+			columns: nextColumns,
+			version,
+			nextCardSeq,
+		});
 
 		this.setState({
 			...this.state,
@@ -571,33 +604,28 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			by: params.by,
 		});
 
-		const posthog = this.makePostHog();
-		if (posthog) {
-			await posthog.captureImmediate({
-				distinctId: params.by,
-				event: "card added",
-				properties: {
-					board_id: this.boardId,
-					card_id: card.id,
-					column_id: params.columnId,
-					card_title: card.title,
-					has_priority: params.priority != null,
-					has_due_date: params.dueDate != null,
-					actor_type: params.by.split(":")[0],
-				},
-			});
-			await posthog.shutdown();
-		}
+		this.capture(params.by, "card added", {
+			board_id: this.boardId,
+			card_id: card.id,
+			column_id: params.columnId,
+			card_title: card.title,
+			has_priority: params.priority != null,
+			has_due_date: params.dueDate != null,
+			actor_type: params.by.split(":")[0],
+		});
 
 		return { card, version };
 	}
 
 	private async updateCardInternal(cardId: string, updates: CardUpdates & { by: string }) {
-		const snapshot = this.requireSnapshot();
+		const snapshot = this.ensureMigrated();
 		const existing = snapshot.cards.find((entry) => entry.id === cardId);
 		if (!existing) {
 			throw new CardNotFound({ cardId });
 		}
+
+		const labels = this.normalizeStringList(updates.labels, "labels");
+		const blockedBy = this.normalizeStringList(updates.blockedBy, "blockedBy");
 
 		const next: Card = {
 			...existing,
@@ -619,6 +647,22 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 				(next as { dueDate?: string }).dueDate = updates.dueDate;
 			}
 		}
+		// Full-replace semantics for labels/blockedBy: `undefined` leaves the
+		// existing list alone, `[]` clears it, anything else overwrites.
+		if (labels !== undefined) {
+			if (labels.length === 0) {
+				delete (next as { labels?: readonly string[] }).labels;
+			} else {
+				(next as { labels?: readonly string[] }).labels = labels;
+			}
+		}
+		if (blockedBy !== undefined) {
+			if (blockedBy.length === 0) {
+				delete (next as { blockedBy?: readonly string[] }).blockedBy;
+			} else {
+				(next as { blockedBy?: readonly string[] }).blockedBy = blockedBy;
+			}
+		}
 		const card = next;
 		const version = snapshot.board.version + 1;
 		const board = this.withBoardMeta(snapshot.board, { version });
@@ -638,20 +682,12 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			by: updates.by,
 		});
 
-		const posthog = this.makePostHog();
-		if (posthog) {
-			await posthog.captureImmediate({
-				distinctId: updates.by,
-				event: "card updated",
-				properties: {
-					board_id: this.boardId,
-					card_id: cardId,
-					column_id: card.columnId,
-					actor_type: updates.by.split(":")[0],
-				},
-			});
-			await posthog.shutdown();
-		}
+		this.capture(updates.by, "card updated", {
+			board_id: this.boardId,
+			card_id: cardId,
+			column_id: card.columnId,
+			actor_type: updates.by.split(":")[0],
+		});
 
 		return { card, version };
 	}
@@ -660,7 +696,7 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 		cardId: string,
 		params: { toColumnId: string; position: number; by: string },
 	) {
-		const snapshot = this.requireSnapshot();
+		const snapshot = this.ensureMigrated();
 		const existing = snapshot.cards.find((entry) => entry.id === cardId);
 		if (!existing) {
 			throw new CardNotFound({ cardId });
@@ -705,28 +741,20 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			by: params.by,
 		});
 
-		const posthog = this.makePostHog();
-		if (posthog) {
-			await posthog.captureImmediate({
-				distinctId: params.by,
-				event: "card moved",
-				properties: {
-					board_id: this.boardId,
-					card_id: cardId,
-					from_column_id: existing.columnId,
-					to_column_id: params.toColumnId,
-					column_changed: existing.columnId !== params.toColumnId,
-					actor_type: params.by.split(":")[0],
-				},
-			});
-			await posthog.shutdown();
-		}
+		this.capture(params.by, "card moved", {
+			board_id: this.boardId,
+			card_id: cardId,
+			from_column_id: existing.columnId,
+			to_column_id: params.toColumnId,
+			column_changed: existing.columnId !== params.toColumnId,
+			actor_type: params.by.split(":")[0],
+		});
 
 		return { card, version };
 	}
 
 	private async deleteCardInternal(cardId: string, by: string) {
-		const snapshot = this.requireSnapshot();
+		const snapshot = this.ensureMigrated();
 		const existing = snapshot.cards.find((entry) => entry.id === cardId);
 		if (!existing) {
 			throw new CardNotFound({ cardId });
@@ -757,26 +785,18 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			by,
 		});
 
-		const posthog = this.makePostHog();
-		if (posthog) {
-			await posthog.captureImmediate({
-				distinctId: by,
-				event: "card deleted",
-				properties: {
-					board_id: this.boardId,
-					card_id: cardId,
-					column_id: existing.columnId,
-					actor_type: by.split(":")[0],
-				},
-			});
-			await posthog.shutdown();
-		}
+		this.capture(by, "card deleted", {
+			board_id: this.boardId,
+			card_id: cardId,
+			column_id: existing.columnId,
+			actor_type: by.split(":")[0],
+		});
 
 		return { deleted: cardId, version };
 	}
 
 	private async addColumnInternal(title: string, by: string) {
-		const snapshot = this.requireSnapshot();
+		const snapshot = this.ensureMigrated();
 		const column = {
 			id: nanoid(8),
 			title,
@@ -804,26 +824,18 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			by,
 		});
 
-		const posthog = this.makePostHog();
-		if (posthog) {
-			await posthog.captureImmediate({
-				distinctId: by,
-				event: "column added",
-				properties: {
-					board_id: this.boardId,
-					column_id: column.id,
-					column_title: title,
-					actor_type: by.split(":")[0],
-				},
-			});
-			await posthog.shutdown();
-		}
+		this.capture(by, "column added", {
+			board_id: this.boardId,
+			column_id: column.id,
+			column_title: title,
+			actor_type: by.split(":")[0],
+		});
 
 		return { column, version };
 	}
 
 	private async updateColumnInternal(columnId: string, title: string, by: string) {
-		const snapshot = this.requireSnapshot();
+		const snapshot = this.ensureMigrated();
 		const existing = snapshot.board.columns.find((entry) => entry.id === columnId);
 		if (!existing) {
 			throw new ColumnNotFound({ columnId });
@@ -862,7 +874,7 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 		moveCardsTo: string | undefined,
 		by: string,
 	) {
-		const snapshot = this.requireSnapshot();
+		const snapshot = this.ensureMigrated();
 		const column = snapshot.board.columns.find((entry) => entry.id === columnId);
 		if (!column) {
 			throw new ColumnNotFound({ columnId });
@@ -927,26 +939,18 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			by,
 		});
 
-		const posthog = this.makePostHog();
-		if (posthog) {
-			await posthog.captureImmediate({
-				distinctId: by,
-				event: "column deleted",
-				properties: {
-					board_id: this.boardId,
-					column_id: columnId,
-					cards_moved: cardsMoved,
-					actor_type: by.split(":")[0],
-				},
-			});
-			await posthog.shutdown();
-		}
+		this.capture(by, "column deleted", {
+			board_id: this.boardId,
+			column_id: columnId,
+			cards_moved: cardsMoved,
+			actor_type: by.split(":")[0],
+		});
 
 		return { deleted: columnId, cardsMoved, version };
 	}
 
 	private async reorderColumnsInternal(columnIds: readonly string[], by: string) {
-		const snapshot = this.requireSnapshot();
+		const snapshot = this.ensureMigrated();
 		const currentIds = snapshot.board.columns.map((entry) => entry.id);
 
 		// Validate: input must be a permutation of the current column ids.
@@ -1015,6 +1019,108 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			...updates,
 			updatedAt: new Date().toISOString(),
 		} as Board;
+	}
+
+	// Ensure the board and its cards have the Symphony-compatible fields the
+	// API contract now exposes (`nextCardSeq` on the board, `identifier` on
+	// every card). Idempotent: cheap boolean check on already-migrated state.
+	//
+	// We migrate on demand instead of via a one-shot startup hook because the
+	// Agents SDK loads state lazily and we want any read or write to return a
+	// consistent view to the agent on the other end of the wire.
+	private ensureMigrated(): BoardSnapshot {
+		// Inline the board-null check (rather than delegating to
+		// `requireSnapshot`) so the rest of this file can call
+		// `ensureMigrated` everywhere without risking recursion.
+		const currentBoard = this.state.board;
+		if (!currentBoard) {
+			throw new BoardNotFound({ boardId: this.boardId });
+		}
+		const snapshot: BoardSnapshot = {
+			board: currentBoard,
+			cards: this.state.cards,
+		} as BoardSnapshot;
+		const boardNeedsSeq = snapshot.board.nextCardSeq === undefined;
+		const cardsNeedingId = snapshot.cards.filter((entry) => !entry.identifier);
+
+		if (!boardNeedsSeq && cardsNeedingId.length === 0) {
+			return snapshot;
+		}
+
+		// Defensive: tolerate a partial prior migration (some cards already
+		// stamped). Take the max sequence already in use as the starting point
+		// so we never reuse an identifier.
+		const idPrefix = `${this.boardId}-`;
+		let maxSeq = 0;
+		for (const card of snapshot.cards) {
+			if (!card.identifier?.startsWith(idPrefix)) continue;
+			const tail = card.identifier.slice(idPrefix.length);
+			const parsed = Number(tail);
+			if (Number.isInteger(parsed) && parsed > maxSeq) maxSeq = parsed;
+		}
+
+		// Assign identifiers in createdAt order so the numbering tracks
+		// creation order. Stable for replay/debug.
+		const ordered = [...cardsNeedingId].sort((a, b) =>
+			a.createdAt.localeCompare(b.createdAt),
+		);
+		const assigned = new Map<string, string>();
+		for (const card of ordered) {
+			maxSeq += 1;
+			assigned.set(card.id, `${idPrefix}${maxSeq}`);
+		}
+
+		const cards = snapshot.cards.map((card) =>
+			card.identifier
+				? card
+				: ({ ...card, identifier: assigned.get(card.id) } as Card),
+		);
+		const nextCardSeq = Math.max(snapshot.board.nextCardSeq ?? 1, maxSeq + 1);
+		const board = { ...snapshot.board, nextCardSeq } as Board;
+
+		this.setState({
+			...this.state,
+			board,
+			cards,
+			presence: this.prunePresence(this.state.presence),
+		});
+
+		return { board, cards } as BoardSnapshot;
+	}
+
+	// Mint the next identifier for a new card and return both the identifier
+	// and the bumped board sequence, so callers can apply both in the same
+	// `setState` to keep them consistent.
+	private mintCardIdentifier(board: Board): { identifier: string; nextCardSeq: number } {
+		const seq = board.nextCardSeq ?? 1;
+		return {
+			identifier: `${board.id}-${seq}`,
+			nextCardSeq: seq + 1,
+		};
+	}
+
+	// Trim, reject empty entries, reject duplicates. Server preserves case so
+	// that consumers that care about case (e.g. UI badge styling) stay accurate;
+	// the CLI side normalises to lowercase when filtering.
+	private normalizeStringList(
+		values: readonly string[] | undefined,
+		field: string,
+	): readonly string[] | undefined {
+		if (values === undefined) return undefined;
+		const seen = new Set<string>();
+		const out: string[] = [];
+		for (const raw of values) {
+			const trimmed = raw.trim();
+			if (!trimmed) {
+				throw new ValidationError({ message: `${field}: empty value not allowed` });
+			}
+			if (seen.has(trimmed)) {
+				throw new ValidationError({ message: `${field}: duplicate value "${trimmed}"` });
+			}
+			seen.add(trimmed);
+			out.push(trimmed);
+		}
+		return out;
 	}
 
 	private async appendChange(params: AppendChangeParams) {
@@ -1096,7 +1202,7 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 		await this.ctx.storage.put(cursorKey(agentId), version);
 	}
 
-	private async handleError(error: unknown) {
+	private handleError(error: unknown): Response {
 		const tag = (error as { _tag?: string } | null)?._tag;
 		if (tag === "BoardNotFound") {
 			const typed = error as BoardNotFound;
@@ -1119,11 +1225,7 @@ export class BoardAgentSqlite extends Agent<Cloudflare.Env, BoardAgentState> {
 			return this.json({ _tag: tag, message: typed.message }, 400);
 		}
 
-		const posthog = this.makePostHog();
-		if (posthog) {
-			await posthog.captureExceptionImmediate(error as Error, "server");
-			await posthog.shutdown();
-		}
+		this.captureException(error instanceof Error ? error : new Error(String(error)));
 		const message = error instanceof Error ? error.message : "Internal error";
 		return this.json({ error: message }, 500);
 	}

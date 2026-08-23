@@ -1,0 +1,36 @@
+{
+  "name": "@kangent/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "kangent": "./dist/cli/main.js"
+  },
+  "main": "./dist/cli/main.js",
+  "types": "./dist/cli/main.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx src/cli/main.ts",
+    "start": "node dist/cli/main.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "bash scripts/smoke.sh"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.0-beta.64",
+    "@kangent/agent-sdk": "workspace:*",
+    "@kangent/board-core": "workspace:*",
+    "effect": "4.0.0-beta.64",
+    "gray-matter": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.9"
+  }
+}
