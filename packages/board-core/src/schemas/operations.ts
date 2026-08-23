@@ -22,6 +22,10 @@ export class CardAddOp extends Schema.Class<CardAddOp>("CardAddOp")({
 	description: Schema.optional(Schema.Unknown),
 	priority: Schema.optional(CardPriority),
 	dueDate: Schema.optional(Schema.String),
+	// Optional on creation. Server preserves order and rejects duplicates.
+	labels: Schema.optional(Schema.Array(Schema.String)),
+	// Optional on creation. Each entry is a card identifier (not an internal id).
+	blockedBy: Schema.optional(Schema.Array(Schema.String)),
 }) {}
 
 export class CardMoveOp extends Schema.Class<CardMoveOp>("CardMoveOp")({
@@ -41,6 +45,11 @@ export class CardUpdateOp extends Schema.Class<CardUpdateOp>("CardUpdateOp")({
 	// Pass `null` to explicitly clear the field; omit to leave unchanged.
 	priority: Schema.optional(Schema.NullOr(CardPriority)),
 	dueDate: Schema.optional(Schema.NullOr(Schema.String)),
+	// Full-replace semantics: omit to leave unchanged, pass `[]` to clear,
+	// pass a list to overwrite. Server rejects duplicates.
+	labels: Schema.optional(Schema.Array(Schema.String)),
+	// Same semantics as `labels`. Use `[]` to unblock.
+	blockedBy: Schema.optional(Schema.Array(Schema.String)),
 }) {}
 
 export class CardDeleteOp extends Schema.Class<CardDeleteOp>("CardDeleteOp")({
@@ -79,11 +88,11 @@ export class PresenceUpdateOp extends Schema.Class<PresenceUpdateOp>("PresenceUp
 	...BaseOp.fields,
 	type: Schema.Literal("presence:update"),
 	cursor: Schema.optional(Schema.Struct({ cardId: Schema.String })),
-	status: Schema.Literal("viewing", "working", "idle"),
+	status: Schema.Literals(["viewing", "working", "idle"]),
 	message: Schema.optional(Schema.String),
 }) {}
 
-export const ClientOperation = Schema.Union(
+export const ClientOperation = Schema.Union([
 	BoardUpdateOp,
 	CardAddOp,
 	CardMoveOp,
@@ -94,7 +103,7 @@ export const ClientOperation = Schema.Union(
 	ColumnDeleteOp,
 	ColumnReorderOp,
 	PresenceUpdateOp,
-);
+]);
 export type ClientOperation = typeof ClientOperation.Type;
 
 export class BoardStateMessage extends Schema.Class<BoardStateMessage>("BoardStateMessage")({
@@ -130,17 +139,17 @@ export class PresenceStateMessage extends Schema.Class<PresenceStateMessage>(
 		Schema.Struct({
 			id: ActorId,
 			cursor: Schema.optional(Schema.Struct({ cardId: Schema.String })),
-			status: Schema.Literal("viewing", "working", "idle"),
+			status: Schema.Literals(["viewing", "working", "idle"]),
 			message: Schema.optional(Schema.String),
 		}),
 	),
 }) {}
 
-export const ServerMessage = Schema.Union(
+export const ServerMessage = Schema.Union([
 	BoardStateMessage,
 	OpAppliedMessage,
 	OpAckMessage,
 	OpErrorMessage,
 	PresenceStateMessage,
-);
+]);
 export type ServerMessage = typeof ServerMessage.Type;

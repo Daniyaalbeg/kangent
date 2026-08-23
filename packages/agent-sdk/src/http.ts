@@ -53,7 +53,7 @@ export class KangentHttpClient {
 	}
 
 	async getBoardState(boardId: string) {
-		return this.request<{ board: unknown; presence: unknown[] }>(
+		return this.request<{ board: unknown; cards: unknown[]; presence: unknown[] }>(
 			"GET",
 			`/api/boards/${boardId}/state`,
 		);
@@ -67,6 +67,11 @@ export class KangentHttpClient {
 			description?: string;
 			priority?: CardPriorityValue;
 			dueDate?: string;
+			// Optional list of labels. Server preserves case and rejects duplicates.
+			labels?: readonly string[];
+			// Optional list of card identifiers (e.g. `<boardId>-7`) that block
+			// this card.
+			blockedBy?: readonly string[];
 			by: string;
 		},
 	) {
@@ -86,6 +91,11 @@ export class KangentHttpClient {
 			// Pass `null` to clear a field; omit to leave unchanged.
 			priority?: CardPriorityValue | null;
 			dueDate?: string | null;
+			// Full-replace semantics: omit to leave unchanged, pass `[]` to
+			// clear, anything else overwrites.
+			labels?: readonly string[];
+			// Same semantics as `labels`. Use `[]` to unblock.
+			blockedBy?: readonly string[];
 			by: string;
 		},
 	) {

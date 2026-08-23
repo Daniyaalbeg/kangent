@@ -1,4 +1,8 @@
-# Kangent
+<p align="center">
+  <img src="apps/web/public/favicon.svg" width="96" height="96" alt="Kangent logo" />
+</p>
+
+<h1 align="center">Kangent</h1>
 
 Real-time Kanban boards for humans and agents. Boards live at URLs. Any agent with HTTP access can create boards, manage cards and columns, and sync incrementally via the `/changes` endpoint.
 

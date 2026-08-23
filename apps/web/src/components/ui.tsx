@@ -406,10 +406,24 @@ export function Brand({
 		<div
 			{...props}
 			className={cn(
-				"text-[13px] leading-[18px] tracking-[0.14em] uppercase text-text-secondary",
+				"flex items-center gap-2 text-[13px] leading-[18px] tracking-[0.14em] uppercase text-text-secondary",
 				className,
 			)}
 		>
+			<svg aria-hidden="true" className="size-6 shrink-0" viewBox="0 0 24 24" fill="none">
+				<rect x="2" y="2.5" width="8.5" height="7" rx="1.75" fill="currentColor" />
+				<rect x="2" y="11" width="8.5" height="10.5" rx="1.75" fill="currentColor" opacity="0.72" />
+				<rect x="13.5" y="2.5" width="8.5" height="10" rx="1.75" fill="currentColor" />
+				<rect
+					x="13.5"
+					y="14"
+					width="8.5"
+					height="7.5"
+					rx="1.75"
+					fill="currentColor"
+					opacity="0.72"
+				/>
+			</svg>
 			{children}
 		</div>
 	);

@@ -22,6 +22,11 @@ export interface AddCardParams {
 	readonly description?: unknown;
 	readonly priority?: CardPriority;
 	readonly dueDate?: string;
+	// Optional list of free-form labels; server preserves case and rejects
+	// duplicates within the list.
+	readonly labels?: readonly string[];
+	// Optional list of card identifiers (e.g. `<boardId>-7`) that block this card.
+	readonly blockedBy?: readonly string[];
 	readonly by: string;
 }
 
@@ -31,6 +36,11 @@ export interface CardUpdates {
 	// `null` clears the field; omitting leaves it unchanged.
 	readonly priority?: CardPriority | null;
 	readonly dueDate?: string | null;
+	// Full-replace semantics: `undefined` leaves the existing list alone,
+	// `[]` clears it, anything else overwrites.
+	readonly labels?: readonly string[];
+	// Full-replace semantics; pass `[]` to unblock.
+	readonly blockedBy?: readonly string[];
 }
 
 export interface AppendChangeParams {
@@ -54,7 +64,7 @@ export interface ChangeFeedRead {
 	readonly changes: readonly Change[];
 }
 
-export class BoardStorage extends Context.Tag("BoardStorage")<
+export class BoardStorage extends Context.Service<
 	BoardStorage,
 	{
 		readonly getBoard: () => Effect.Effect<Board, BoardNotFound>;
@@ -98,13 +108,13 @@ export class BoardStorage extends Context.Tag("BoardStorage")<
 		readonly getAgentCursor: (agentId: string) => Effect.Effect<number | undefined>;
 		readonly setAgentCursor: (agentId: string, version: number) => Effect.Effect<void>;
 	}
->() {}
+>()("BoardStorage") {}
 
-export class Broadcaster extends Context.Tag("Broadcaster")<
+export class Broadcaster extends Context.Service<
 	Broadcaster,
 	{
 		readonly broadcast: (message: unknown, exclude?: WebSocket) => Effect.Effect<void>;
 		readonly broadcastPresence: () => Effect.Effect<void>;
 		readonly getConnectionCount: () => Effect.Effect<number>;
 	}
->() {}
+>()("Broadcaster") {}
